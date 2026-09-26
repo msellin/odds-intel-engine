@@ -280,6 +280,13 @@ def assert_may_place(
         raise PlacementRefused(f"{bot_name} may not place at {book}: {why}")
 
     now = now or datetime.now(timezone.utc)
+    # [[#162]] design review 2026-09-26: this is the LAST gate before money moves, so a missing input
+    # is a refusal, never a skipped check (it used to skip the cutoff when kickoff_at was None and the
+    # floor when odds was None — every caller passes both today; this makes that a guarantee).
+    if kickoff_at is None:
+        raise PlacementRefused("no kickoff time given — cannot check the kickoff cutoff, refusing")
+    if odds is None:
+        raise PlacementRefused("no price given — cannot check the placement floor, refusing")
     if kickoff_at is not None:
         # Lazy import: place_coolbet_ui imports this module at load time.
         from scripts.place_coolbet_ui import KICKOFF_CUTOFF_MIN
@@ -319,11 +326,10 @@ def assert_may_place(
         raise PlacementRefused(f"per-match exposure: {conflict}")
 
     # [[#162]] W4.3 at the gate: the bot's placement floor at the price about to be staked.
-    if odds is not None:
-        from workers.automation.placement_floor import pick_clears
-        ok, why = pick_clears(bot_name, pick.get("market"), pick.get("selection"), odds, prob)
-        if not ok:
-            raise PlacementRefused(f"placement floor at {book} @ {odds}: {why}")
+    from workers.automation.placement_floor import pick_clears
+    ok, why = pick_clears(bot_name, pick.get("market"), pick.get("selection"), odds, prob)
+    if not ok:
+        raise PlacementRefused(f"placement floor at {book} @ {odds}: {why}")
 
 
 def gate_status() -> dict:

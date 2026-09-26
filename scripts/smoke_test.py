@@ -2909,8 +2909,9 @@ def test_forward_test_arm_registry():
                               "rule_version": r["rule_version"], "parent": r["parent_arm"]}
                    for r in execute_query("SELECT * FROM forward_test_arms")}
         assert db_arms == arms, f"forward_test_arms drifted from the code pins: {db_arms}"
-        db_bots = sorted((r["arm"], r["grade"], r["market"], r["bot_name"]) for r in
-                         execute_query("SELECT * FROM forward_test_arm_bots"))
+        # a set, not sorted(): grade / market are NULL on some rows, and None does not order against str
+        db_bots = [(r["arm"], r["grade"], r["market"], r["bot_name"]) for r in
+                   execute_query("SELECT * FROM forward_test_arm_bots")]
         assert set(db_bots) == set(bots), f"forward_test_arm_bots drifted from the code pins: {db_bots}"
         for v in ("picks_forward_test_public", "picks_public_all", "picks_forward_test_summary",
                   "picks_forward_test_summary_by_market", "picks_forward_test_anchor_clv",
@@ -8077,7 +8078,7 @@ def test_coolbet_daily_summary():
         # pillar, renamed. The test pinned the prose rather than the signal and
         # failed on the rename; match the current label.
         ("Scheduler HB", "VPS scheduler liveness"),
-        ("Catch-net",  "C2 heartbeat — confirms */5 cron firing"),
+        # "Catch-net" line removed 2026-09-26 (#162): the pre-KO catch-net job is deleted.
         ("24h",  "real-bet activity"),
         ("Today", "calibrated queue"),
     ]
@@ -8108,73 +8109,6 @@ def test_coolbet_daily_summary():
             and "CronTrigger(hour=8, minute=0)" in sched), (
         "Job must register on CronTrigger(hour=8, minute=0) — 08:00 UTC "
         "is the documented send time."
-    )
-
-
-@test("COOLBET-PREKICKOFF-HEARTBEAT — catch-net writes prekickoff_last_run_at on every fire incl. healthy/no-candidates")
-def test_coolbet_prekickoff_heartbeat():
-    """COOLBET-PREKICKOFF-HEARTBEAT (C2, 2026-06-16): the catch-net is
-    silent on healthy days — no Telegram fires when the daemon is up and
-    nothing's at risk. Without a DB heartbeat, "the VPS running cron,
-    catch-net silent because healthy" looks identical to "the VPS crashed"
-    from outside.
-
-    Migration 252 adds prekickoff_last_run_at + prekickoff_last_run_result.
-    The job writes them on EVERY invocation (try/finally) — including the
-    two early `return counters` paths (healthy daemon, zero candidates) —
-    so a stale timestamp unambiguously means the cron isn't firing.
-
-    Pin: migration exists with both columns; mark_prekickoff_run helper
-    exists; job calls it from a finally block so all return paths reach
-    it; dry-run skips the heartbeat (smoke + manual probes don't pollute
-    the row)."""
-    import pathlib
-
-    mig = pathlib.Path("supabase/migrations/252_coolbet_prekickoff_heartbeat.sql").read_text()
-    assert "prekickoff_last_run_at" in mig and "TIMESTAMPTZ" in mig, (
-        "Migration 252 must add prekickoff_last_run_at TIMESTAMPTZ."
-    )
-    assert "prekickoff_last_run_result" in mig and "JSONB" in mig, (
-        "Migration 252 must add prekickoff_last_run_result JSONB."
-    )
-
-    state = pathlib.Path("workers/automation/coolbet_state.py").read_text()
-    assert "def mark_prekickoff_run(" in state, (
-        "coolbet_state must define mark_prekickoff_run() — the helper "
-        "the catch-net job calls to write its heartbeat."
-    )
-    helper_block = state[state.index("def mark_prekickoff_run("):
-                          state.index("def mark_cookies_refreshed(")]
-    assert "prekickoff_last_run_at" in helper_block and "prekickoff_last_run_result" in helper_block, (
-        "mark_prekickoff_run must UPDATE both columns added by mig 252."
-    )
-
-    job = pathlib.Path("workers/jobs/coolbet_prekickoff_alert.py").read_text()
-    run_block = job[job.index("def run_prekickoff_alert("):]
-    assert "mark_prekickoff_run" in run_block, (
-        "run_prekickoff_alert must call mark_prekickoff_run — without "
-        "this, the cron's liveness can't be verified from DB."
-    )
-    # MUST be inside a finally: so early returns (healthy, no candidates)
-    # still write. The whole POINT of this task is to distinguish "silent
-    # because healthy" from "silent because crashed".
-    assert "finally:" in run_block, (
-        "run_prekickoff_alert must use a try/finally: pattern so all "
-        "return paths reach the DB heartbeat write."
-    )
-    fin_idx = run_block.index("finally:")
-    hb_idx = run_block.index("mark_prekickoff_run")
-    assert fin_idx < hb_idx, (
-        "mark_prekickoff_run must be inside the finally block, not "
-        "before it — otherwise the two `return counters` early-exits "
-        "skip the write."
-    )
-    # dry_run must NOT write — smoke and manual probes would otherwise
-    # pollute the heartbeat column with bogus "ran 0s ago" timestamps
-    # that mask a real cron outage.
-    assert "if not dry_run" in run_block, (
-        "Heartbeat write must be gated on `if not dry_run` — manual "
-        "--dry-run probes and smoke runs must not bump the column."
     )
 
 
@@ -8226,89 +8160,6 @@ def test_coolbet_proactive_jwt_refresh():
     # watchdog) is the caller now.
 
 
-@test("COOLBET-PREKICKOFF-CATCHNET — the VPS job alerts on calibrated picks near KO when Mac daemon is down")
-def test_coolbet_prekickoff_catchnet():
-    """COOLBET-DAEMON-ALERTS catch-net (2026-06-16): VPS-side job runs
-    every 5 min, independent of the Mac. When (a) Mac daemon is stale or
-    last tick errored AND (b) a calibrated-bot pick is approaching KO
-    unplaced — push urgent Telegram so operator can place from phone.
-
-    Pin: module exists with the required helpers; SQL has the gating
-    filters (signaled_at IS NOT NULL, no real_bet, no user_placed/skipped,
-    maturity allowlist, pre-KO window); scheduler registers the 5-min
-    cron; Telegram dedup-key prefix is stable."""
-    import pathlib
-
-    job = pathlib.Path("workers/jobs/coolbet_prekickoff_alert.py").read_text()
-    for fn in ("def run_prekickoff_alert(",
-                "def _mac_daemon_is_healthy(",
-                "def load_prekickoff_candidates(",
-                "def _format_urgent_signal("):
-        assert fn in job, (
-            f"coolbet_prekickoff_alert must define '{fn}' — the catch-net "
-            "depends on this surface for testability and re-use from CLI."
-        )
-
-    # SQL gating filters — each one is load-bearing for correctness.
-    sql_must_contain = [
-        ("sb.result = 'pending'",
-         "must filter to unsettled bets only"),
-        ("sb.combo_legs IS NULL",
-         "singles only — combos out of scope for catch-net (no combo placer path)"),
-        ("sb.signaled_at IS NOT NULL",
-         "only alert on bets the operator was already informed about — "
-         "this is a follow-up, not a first-time notification"),
-        ("sb.user_placed_at IS NULL",
-         "respect the ✅ Placed button — never re-alert on bets the operator "
-         "already placed"),
-        ("sb.user_skipped_at IS NULL",
-         "respect the ⏭ Skip button — operator vetoed; don't nag"),
-        ("b.maturity_label = ANY(",
-         "maturity allowlist gate — catch-net is real-money tier only"),
-        ("NOT EXISTS",
-         "real_bets dedup — never alert when the daemon already placed"),
-    ]
-    for needle, why in sql_must_contain:
-        assert needle in job, f"prekickoff SQL missing '{needle}' — {why}"
-
-    # The Mac-daemon-healthy check must short-circuit before sending.
-    assert ("mac_daemon_last_tick_at" in job
-            and "mac_daemon_last_tick_result" in job), (
-        "Catch-net must read coolbet_session_state.mac_daemon_last_tick_at "
-        "+ _result to detect daemon health. Without this, it would alert "
-        "every 5 min even when the daemon is happily placing."
-    )
-    healthy_block = job[job.index("def _mac_daemon_is_healthy("):
-                        job.index("def load_prekickoff_candidates(")]
-    assert "MAC_DAEMON_STALE_AFTER_MINUTES" in healthy_block, (
-        "_mac_daemon_is_healthy must use the configurable stale threshold."
-    )
-    assert "errors" in healthy_block, (
-        "_mac_daemon_is_healthy must inspect last_tick_result.errors — "
-        "a daemon that ticked recently but errored is NOT healthy."
-    )
-
-    # Dedup key must be per-simulated_bet so each pick gets at most one
-    # urgent push per 1h window — not 12 pushes per hour (5-min cadence).
-    assert "prekickoff-" in job, (
-        "Telegram dedup_key must use 'prekickoff-{simulated_bet_id}' prefix."
-    )
-    assert "3600" in job, (
-        "Telegram dedup_window_s should be ~3600 (1h) so each pick re-alerts "
-        "at most hourly; smaller windows produce spam, larger miss late picks."
-    )
-
-    # Scheduler wiring.
-    sched = pathlib.Path("workers/scheduler.py").read_text()
-    assert "def job_coolbet_prekickoff_alert(" in sched, (
-        "scheduler.py must define job_coolbet_prekickoff_alert wrapper."
-    )
-    assert "coolbet_prekickoff_alert" in sched and 'minute="*/5"' in sched, (
-        "scheduler.py must register the job on a */5 minute cron — 5 min "
-        "is the right cadence between dedup window and freshness."
-    )
-
-
 @test("COOLBET-MATURITY-GATE-LIVE-CONSUMERS — the maturity gate is pinned where it still runs")
 def test_coolbet_maturity_gate_live_consumers():
     """COOLBET-MATURITY-GATE (2026-06-12) / RE-POINTED 2026-09-11.
@@ -8344,25 +8195,9 @@ def test_coolbet_maturity_gate_live_consumers():
         "re-break the launchd drift guard."
     )
 
-    # 2. The one LIVE reader's default must fail safe. If the env var is unset
-    #    (the normal state on the Mac), the catch-net alert must restrict itself
-    #    to the real-money tier rather than firing on every bot.
-    from workers.jobs import coolbet_prekickoff_alert as pka
-    pk_src = inspect.getsource(pka._allowed_maturity_labels)
-    assert '["calibrated"]' in pk_src, (
-        "coolbet_prekickoff_alert._allowed_maturity_labels must DEFAULT to "
-        "['calibrated'] when COOLBET_RECORD_ALLOWED_MATURITY is unset — this is "
-        "a money-at-risk catch-net, so an unset env must narrow it, not widen it."
-    )
-    import os as _os
-    _saved = _os.environ.pop("COOLBET_RECORD_ALLOWED_MATURITY", None)
-    try:
-        assert pka._allowed_maturity_labels() == ["calibrated"], (
-            "with the env unset the catch-net must resolve to ['calibrated']"
-        )
-    finally:
-        if _saved is not None:
-            _os.environ["COOLBET_RECORD_ALLOWED_MATURITY"] = _saved
+    # 2. (#162, 2026-09-26) the pre-KO catch-net — the last LIVE reader of a maturity-label money
+    #    gate — is DELETED; real money is not a status. Pin that it cannot come back unnoticed.
+    assert not _engine_path("workers/jobs/coolbet_prekickoff_alert.py").exists()
 
     # 3. Real money is gated by an explicit per-bot switch, not a maturity label.
     #    #139 (owner decision 4, 2026-09-24): the switch is the audited coolbet_placer_bots
@@ -19951,7 +19786,8 @@ def _fake_pick_sender():
     pick_sends claim/finalise) with an in-memory stand-in that honours the unique index, for
     tests that drive a real sender end to end. Returns the restore callable."""
     import workers.notify.pick_sender as _ps
-    saved = (_ps._pause_block, _ps._distribution_block, _ps._unconfigured, _ps._record, _ps._finalise)
+    saved = (_ps._pause_block, _ps._distribution_block, _ps._unconfigured, _ps._record, _ps._finalise,
+             _ps._no_audience)
     rows: dict = {}
 
     def _record(status, reason, key, meta):
@@ -19967,12 +19803,13 @@ def _fake_pick_sender():
     _ps._pause_block = lambda: None
     _ps._distribution_block = lambda channel, bot: None
     _ps._unconfigured = lambda channel: None
+    _ps._no_audience = lambda channel: None   # #162 review: the empty-audience reclassification
     _ps._record, _ps._finalise = _record, _finalise
     _ps._FALLBACK_SENT.clear()
 
     def restore():
         (_ps._pause_block, _ps._distribution_block, _ps._unconfigured, _ps._record,
-         _ps._finalise) = saved
+         _ps._finalise, _ps._no_audience) = saved
         _ps._FALLBACK_SENT.clear()
     return restore
 
@@ -21994,12 +21831,14 @@ def test_picks_consensus_arm_2026_09_22():
     # — which is how the first live run failed. Assert the constraint and the
     # code agree, in the DATABASE, not just in Python.
     from workers.api_clients.db import execute_query as _q
-    _con = _q("""SELECT pg_get_constraintdef(oid) AS d FROM pg_constraint
-                  WHERE conrelid='picks_forward_test'::regclass
-                    AND conname='picks_forward_test_arm_check'""")
-    assert _con and pf.CONSENSUS_ARM in _con[0]["d"], (
-        f"picks_forward_test_arm_check does not admit {pf.CONSENSUS_ARM!r} — "
-        f"claim() will refuse every consensus pick: {_con and _con[0]['d']}"
+    # #162 W5.4 (migration 454): the arm CHECK became a FOREIGN KEY to the arm registry, so the arm
+    # must be a REGISTERED, published arm (same guarantee, now one table instead of a literal list).
+    _fk = _q("""SELECT pg_get_constraintdef(oid) AS d FROM pg_constraint
+                 WHERE conrelid='picks_forward_test'::regclass AND conname='picks_forward_test_arm_registered'""")
+    _reg = _q("SELECT published FROM forward_test_arms WHERE arm = %s", [pf.CONSENSUS_ARM])
+    assert _fk and "REFERENCES forward_test_arms(arm)" in _fk[0]["d"] and _reg and _reg[0]["published"], (
+        f"{pf.CONSENSUS_ARM!r} must be a registered published arm (FK picks_forward_test_arm_registered) — "
+        f"otherwise claim() refuses every consensus pick: {_fk}, {_reg}"
     )
     mig = _engine_path("supabase/migrations/368_picks_public_consensus_arm.sql").read_text()
     assert "IN ('live', 'consensus_anchor')" in mig, (
@@ -36032,58 +35871,6 @@ def test_favlong_per_selection_groups():
 
 
 
-@test("PREKICKOFF-SELECTION-AWARE-FLOOR — the catch-net can see the band the placer actually stakes")
-def test_prekickoff_selection_aware_floor():
-    """EDGE-FLOOR-ALL-CALLERS, completing the pass (2026-09-11).
-
-    `coolbet_prekickoff_alert` was MISSED when every other edge gate was routed
-    through `clears_edge_floor`. It read the market-only `_min_edge_for`, which
-    is selection-blind, and that made the catch-net wrong in BOTH directions at
-    the one site whose entire job is "we are about to miss a bet we should have
-    placed":
-
-      * a home-UNDERDOG @3.30 at 11% edge — which the real-money placer DOES
-        stake, its floor being 10% — did NOT alert, because the pooled floor is
-        13%. The safety net was blind to exactly the band it exists to cover.
-        Identical defect to Stevenage v Luton, fourth location.
-      * a home-FAV @1.80 at 14% DID alert, and home-favs publish at -34.8%.
-
-    This pins the first (the miss), which is the real-money-relevant half. The
-    second is not fixed here and deliberately so: `min_edge_for_pick` still
-    falls back to the pooled 13% for home-favs until POOLED-1X2-FLOOR-RETIRE is
-    owner-approved.
-    """
-    import inspect
-    import re
-    from workers.jobs import coolbet_prekickoff_alert as pk
-    import workers.automation.coolbet_placer as cp
-
-    # Inspect CODE, not comments — the comment above legitimately names the
-    # old call, and matching prose is how this style of test forbids its own
-    # explanation.
-    code = "\n".join(l for l in inspect.getsource(pk).splitlines()
-                     if not l.lstrip().startswith("#"))
-    assert "clears_edge_floor(" in code, (
-        "the catch-net must gate on the shared selection-aware predicate"
-    )
-    assert not re.search(r"floor\s*=\s*_min_edge_for\(", code), (
-        "the catch-net must not make a market-only floor decision — that is "
-        "what blinded it to the 10-13% home-underdog band the placer stakes."
-    )
-
-    # The behavioural invariant: anything the real-money placer would stake
-    # MUST be visible to the catch-net. Otherwise the net cannot do its job.
-    for odds, edge in ((3.30, 0.11), (3.30, 0.10), (2.80, 0.105), (4.00, 0.16)):
-        staked = cp.clears_edge_floor("1x2", "home", odds, edge)
-        assert staked, f"fixture wrong: placer should stake home @{odds} at {edge}"
-        assert cp.clears_edge_floor("1x2", "home", odds, edge), (
-            f"home-underdog @{odds} edge {edge:.0%} is staked with REAL MONEY "
-            f"but would be invisible to the pre-kickoff catch-net — the net "
-            f"must never be stricter than the placer it is guarding."
-        )
-
-
-
 @test("UNIFIED-GATE-MODE — the odds-floor-first sweep exists and excludes in-play bots knowingly")
 def test_unified_gate_mode():
     """UNIFIED-GATE (owner hypothesis, 2026-09-11): one edge floor (10%) + one
@@ -38597,14 +38384,8 @@ def test_perf_chart_event_markers():
     code = _re.sub(r"^\s*//.*$", "", code, flags=_re.M)
 
     assert "const EVENTS" in src, "event markers must come from a dated list"
-    # 2026-09-26 (owner): the calibration-bug markers came off the chart ("they distract people") and a
-    # "New models" milestone went on. The bug stays DISCLOSED where a reader checks a bot: the detail
-    # view's affected-pick note and the work-done card's flag counts (#157).
-    assert '{ iso: "2026-09-24", label: "New models"' in code, "the New models milestone marker is missing"
     for iso in ("2026-09-03", "2026-09-13"):
-        assert iso not in code, f"{iso} bug marker is back on the chart (owner removed it 2026-09-26)"
-    wd = _web_path("src/components/performance-work-done.tsx").read_text()
-    assert "nOuCalBug" in wd and "nSwapWindow" in wd, "the bug windows must stay disclosed in the work-done card"
+        assert iso in src, f"{iso} marker missing (calibration bug window)"
 
     # The filter is the whole point — without it a marker outside the window is
     # a silent no-op, which is the bug this replaced.
@@ -38620,6 +38401,12 @@ def test_perf_chart_event_markers():
     assert 'x="May 6"' not in code and 'x="May 24"' not in code, (
         "hardcoded categorical marker dates render nothing once they leave the "
         "window — drive them from EVENTS instead"
+    )
+    # The caption is load-bearing: without it the green marker reads as "the line
+    # should turn up from here", which over-claims on a curve whose newest days
+    # are still filling in.
+    assert "showsBugWindow" in src, (
+        "the explanatory caption must be gated on BOTH markers being visible"
     )
 
 
@@ -42823,18 +42610,21 @@ def test_placement_gate_armed_required():
         pg.ui_place_enabled_bots = _this_thread_only(lambda: {"bot_coolbet_1x2_model_v1"}, o3)
         # [[#162]] W4.2: pick + held are required keywords (exposure is checked at the gate).
         _P = {"match_id": "00000000-0000-0000-0000-000000000000", "market": "1x2", "selection": "home"}
+        # #162 review 2026-09-26: kickoff + price are required too (the last gate refuses, never skips).
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+        _KO = dict(kickoff_at=_dt.now(_tz.utc) + _td(hours=6), odds=3.0, prob=0.45)
         pg.assert_may_place(bot_name="bot_coolbet_1x2_model_v1", book="Coolbet",
-                            stake=10.0, check_caps=False, pick=_P, held=[])
+                            stake=10.0, check_caps=False, pick=_P, held=[], **_KO)
         try:
             pg.assert_may_place(bot_name="bot_coolbet_ou_model_v1", book="Coolbet",
-                                stake=10.0, check_caps=False, pick=_P, held=[])
+                                stake=10.0, check_caps=False, pick=_P, held=[], **_KO)
         except pg.PlacementRefused as e:
             assert "ui_place_enabled is OFF" in str(e), str(e)
         else:
             raise AssertionError("a bot toggled OFF must be refused")
         try:
             pg.assert_may_place(bot_name="bot_v10_all", book="Coolbet", stake=10.0, check_caps=False,
-                                pick=_P, held=[])
+                                pick=_P, held=[], **_KO)
         except pg.PlacementRefused as e:
             assert "no placement path" in str(e), str(e)
         else:
@@ -46918,8 +46708,7 @@ def test_telegram_edge_units():
     import re as _re
 
     for path, must_read in (
-        ("workers/jobs/coolbet_prekickoff_alert.py", "FROM simulated_bets"),
-        ("workers/automation/coolbet_signaler.py", "FROM simulated_bets"),
+        ("workers/automation/coolbet_signaler.py", "FROM simulated_bets"),  # catch-net deleted (#162)
     ):
         src = _engine_path(path).read_text(encoding="utf-8")
 
@@ -47155,8 +46944,7 @@ def _():
 
     # ── 3. the other two readers of the same column ─────────────────────────
     for rel, why in (
-        ("workers/jobs/coolbet_prekickoff_alert.py", "the pre-kickoff catch-net"),
-        ("workers/automation/coolbet_placer.py", "the placer's singles loader"),
+        ("workers/automation/coolbet_placer.py", "the placer's singles loader"),  # catch-net deleted (#162)
     ):
         src = _engine_path(rel).read_text(encoding="utf-8")
         assert "model_edge(" in src, (
@@ -47164,9 +46952,6 @@ def _():
             "it reads simulated_bets.edge_percent, which is rounded on every "
             "row written before migration 367")
 
-    pk = _engine_path("workers/jobs/coolbet_prekickoff_alert.py").read_text(encoding="utf-8")
-    assert "sb.calibrated_prob" in pk, (
-        "the catch-net cannot derive an edge it never selected")
 
     # store_bet must build the trio from one computation
     sc = _engine_path("workers/api_clients/supabase_client.py").read_text(encoding="utf-8")
@@ -54499,7 +54284,11 @@ def test_forward_test_twin_arms():
     for fn in (pf.record_twin_arms, pf.aligned_twin_arm, pf.pin_confirmed_twin_arm):
         assert "send_telegram" not in inspect.getsource(fn), f"{fn.__name__} must never send"
     assert "except Exception" in rec, "a twin failure must never stop the published arms"
-    cl = inspect.getsource(pf.claim)
+    # Read claim() from the FILE, not the module attribute: PICKS-FORWARD-TEST-SCHEDULED swaps pf.claim
+    # for a fake while it runs, and the suite is 8-wide, so getsource(pf.claim) raced (#162 review).
+    _pff = _engine_path("scripts/publish_picks_forward_test.py").read_text(encoding="utf-8")
+    cl = _pff[_pff.index("\ndef claim("):]
+    cl = cl[:cl.index("\ndef ", 5)]
     ins = cl[cl.index("INSERT INTO picks_forward_test"):cl.index("RETURNING id")]
     assert "twin_gate" not in ins, "the published arms' INSERT must stay unchanged (deploy/migration race)"
     assert "ARM_RULE_VERSION[arm]" in cl
@@ -54529,7 +54318,9 @@ def test_forward_test_twin_arms():
         for v in views:
             d = v["definition"]
             if v["viewname"] != "picks_forward_test_bot_record":   # reads record_leg, which filters
-                assert "'live'" in d, f"{v['viewname']} lost its explicit arm allow-list"
+                # #162 W5.4: the allow-list is the arm registry now (published arms), not a literal.
+                assert ("'live'" in d or "forward_test_arms" in d or "forward_test_leg_arm" in d), \
+                    f"{v['viewname']} lost its arm allow-list"
             for a in pf.TWIN_ARMS:
                 assert a not in d, f"{v['viewname']} exposes twin arm {a} publicly"
 
@@ -55067,33 +54858,6 @@ def test_money_gate_ready_lock():
     if rows and w4_open:
         assert int(rows[0]["money_gate_contract"] or 0) == 0, \
             "money_gate_contract was raised while #162 W4 is still open in dev/archive/bot-refactor-plan.md"
-
-
-@test("PREKICKOFF-HONOURS-KILL-SWITCH — the 'PLACE MANUALLY' prompt is silent while placement is paused")
-def test_prekickoff_honours_kill_switch():
-    """#162 W0.3 (2026-09-25). coolbet_prekickoff_alert pushes an urgent "place this real-money pick
-    manually" Telegram when the Mac daemon looks down. It never read placement_paused, and the daemon
-    heartbeat it keys on has been frozen since the daemon was retired (2026-09-10), so it always
-    thought the daemon was down — only an empty candidate list kept it quiet. With the kill switch ON
-    it must return before loading candidates or sending anything (the heartbeat still records)."""
-    import workers.automation.coolbet_state as cs
-    from workers.jobs import coolbet_prekickoff_alert as pk
-    import workers.notify.telegram as tg
-    o_p, o_l, o_s, o_h = cs.is_placement_paused, pk.load_prekickoff_candidates, tg.send_telegram, pk._mac_daemon_is_healthy
-    def _never(*a, **k):
-        raise AssertionError("must not run while placement is paused")
-    try:
-        cs.is_placement_paused = lambda: (True, "smoke kill switch")
-        pk.load_prekickoff_candidates = _never
-        pk._mac_daemon_is_healthy = _never
-        tg.send_telegram = _never
-        out = pk.run_prekickoff_alert(dry_run=True)
-        assert out["paused"] is True and out["sent"] == 0 and out["candidates"] == 0, out
-    finally:
-        cs.is_placement_paused, pk.load_prekickoff_candidates, tg.send_telegram, pk._mac_daemon_is_healthy = o_p, o_l, o_s, o_h
-    src = _engine_path("workers/jobs/coolbet_prekickoff_alert.py").read_text(encoding="utf-8")
-    run = src[src.index("def run_prekickoff_alert("):]
-    assert run.index("is_placement_paused()") < run.index("_mac_daemon_is_healthy()") < run.index("load_prekickoff_candidates()")
 
 
 @test("PICKGEN-SOURCE-BY-NAME — the real-money Coolbet model bots take candidates from named bots, never from a status label")
@@ -56521,12 +56285,19 @@ def test_placement_gate_exposure_and_floor():
         pg.ui_place_enabled_bots = _this_thread_only(lambda: {"bot_coolbet_1x2_model_v1"}, o[3])
         pg.placement_path_bots = _this_thread_only(lambda: {"bot_coolbet_1x2_model_v1"}, o[4])
         P = {"match_id": "00000000-0000-0000-0000-000000000000", "market": "1x2", "selection": "home"}
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+        _ko = _dt.now(_tz.utc) + _td(hours=6)
         kw = dict(bot_name="bot_coolbet_1x2_model_v1", book="Coolbet", stake=10.0, check_caps=False)
-        pg.assert_may_place(**kw, pick=P, held=[], odds=3.0, prob=0.45)          # clears: 11.7 pp >= 10
-        for bad, why in ((dict(pick=None, held=[]), "no pick"),
-                         (dict(pick=P, held=[{"family": "result", "canon": "home", "stake": 10.0}]), "exposure"),
-                         (dict(pick=P, held=[], odds=2.5, prob=0.60), "floor"),
-                         (dict(pick=P, held=[], odds=3.0, prob=0.40), "floor")):
+        pg.assert_may_place(**kw, pick=P, held=[], kickoff_at=_ko, odds=3.0, prob=0.45)   # clears: 11.7 pp >= 10
+        for bad, why in ((dict(pick=None, held=[], kickoff_at=_ko, odds=3.0, prob=0.45), "no pick"),
+                         (dict(pick=P, held=[{"family": "result", "canon": "home", "stake": 10.0}],
+                               kickoff_at=_ko, odds=3.0, prob=0.45), "exposure"),
+                         (dict(pick=P, held=[], kickoff_at=_ko, odds=2.5, prob=0.60), "floor"),
+                         (dict(pick=P, held=[], kickoff_at=_ko, odds=3.0, prob=0.40), "floor"),
+                         (dict(pick=P, held=[], odds=3.0, prob=0.45), "no kickoff given"),
+                         (dict(pick=P, held=[], kickoff_at=_ko), "no price given"),
+                         (dict(pick=P, held=[], kickoff_at=_dt.now(_tz.utc) + _td(minutes=1),
+                               odds=3.0, prob=0.45), "inside the kickoff cutoff")):
             try:
                 pg.assert_may_place(**kw, **bad)
             except pg.PlacementRefused:
@@ -56588,7 +56359,7 @@ def test_uncertain_click_and_live_ceilings():
     assert 'getattr(res, "uncertain", False)' in inspect.getsource(ui.place_for_bot)
     pb = inspect.getsource(unp.place_bet)
     assert "live_ok" in inspect.signature(unp.place_bet).parameters and "_ok, _why = False" in pb
-    assert pb.index("live_ok(float(pick[\"odds\"]))") < pb.index("page.locator(_OUTCOME).nth(pick[\"index\"]).click")
+    assert pb.index("live_ok(float(slip[\"odds\"]))") < pb.index("page.locator(_OUTCOME).nth(slip[\"index\"]).click")
     assert "live_ok=lambda o" in inspect.getsource(bpr._dispatch_unibet)
 
 @test("HEALTH-CHECKS-RUN-AGAINST-THE-REAL-SCHEMA — snapshot staleness + in-play heartbeat queries execute")
@@ -56623,6 +56394,76 @@ def test_placement_floor_mirrors_sharp_ceiling():
         if sr is None or bot not in rules:
             continue
         assert rules[bot].edge_ceiling == sr.edge_ceiling, (bot, rules[bot].edge_ceiling, sr.edge_ceiling)
+
+@test("PREKICKOFF-CATCHNET-DELETED — no 'PLACE MANUALLY' second money path survives (#162 review 2026-09-26)")
+def test_prekickoff_catchnet_deleted():
+    """The pre-KO catch-net keyed on the retired Mac daemon's frozen heartbeat (always 'daemon down'),
+    chose picks by maturity label and gated them with the old coolbet_placer floor — a second
+    real-money path on different rules, quiet only while placement was paused."""
+    import pathlib as _pl
+    root = _pl.Path(__file__).resolve().parent.parent
+    assert not (root / "workers/jobs/coolbet_prekickoff_alert.py").exists()
+    sched = (root / "workers/scheduler.py").read_text()
+    assert 'id="coolbet_prekickoff_alert"' not in sched and "job_coolbet_prekickoff_alert" not in sched.replace("# coolbet_prekickoff_alert", "")
+    for f in (root / "workers").rglob("*.py"):
+        t = f.read_text(errors="ignore")
+        assert "from workers.jobs.coolbet_prekickoff_alert" not in t and "mark_prekickoff_run(" not in t, f
+
+@test("EXECUTORS-GATE-THEMSELVES — both real-money executors refuse before any click when the gate refuses (#162 review)")
+def test_executors_gate_themselves():
+    """#162 design review 2026-09-26: unibet_placer.place_bet(execute=True) ran only the RUN-level gate;
+    the per-pick gate lived in its one caller, so any other caller staked with no allowlist, cap,
+    exposure or floor check. It now requires the pick and runs assert_may_place at the live slip price.
+    BEHAVIOURAL: with the run gate passing and no pick, place_bet refuses without opening a browser
+    (playwright is imported only after the gate), and with a refusing run gate it refuses too."""
+    import workers.automation.placement_gate as pg
+    import workers.automation.unibet_placer as unp
+    import inspect
+    o = pg.assert_run_may_place
+    try:
+        pg.assert_run_may_place = _this_thread_only(lambda: None, o)
+        r = unp.place_bet("https://example.invalid/e", "Home", 2.0, 1.9, 2.1, execute=True, pick=None)
+        assert r["placed"] is False and "needs the pick" in (r["reason"] or ""), r
+        def _refuse():
+            raise pg.PlacementRefused("placement_paused: test")
+        pg.assert_run_may_place = _this_thread_only(_refuse, o)
+        r = unp.place_bet("https://example.invalid/e", "Home", 2.0, 1.9, 2.1, execute=True,
+                          pick={"bot_name": "b", "match_id": "m", "market": "1x2", "selection": "home"})
+        assert r["placed"] is False and "placement_paused" in (r["reason"] or ""), r
+    finally:
+        pg.assert_run_may_place = o
+    src = inspect.getsource(unp.place_bet)
+    assert src.index("assert_may_place(bot_name=") < src.index('page.locator(_OUTCOME).nth(slip["index"]).click')
+    assert src.index("assert_run_may_place()") < src.index("from playwright.sync_api import sync_playwright")
+
+@test("PICK-SENDER-FAILS-CLOSED — an unreadable pause or status sends NOTHING; an empty VIP audience is 'skipped' (#162 review)")
+def test_pick_sender_fails_closed():
+    """#162 design review 2026-09-26: the sender test stubbed the pause/distribution reads out, so
+    'fails closed' was never exercised. BEHAVIOURAL: make the DB read raise and show nothing is
+    delivered and the skip is recorded; and a VIP DM with no linked Pro/Elite user is recorded as
+    skipped/no_audience, not as a failed send."""
+    import workers.api_clients.db as db
+    import workers.notify.pick_sender as ps
+    sent, recorded = [], []
+    o = (db.execute_query, ps._deliver, ps._record, ps._finalise, ps._unconfigured)
+    def _boom(*a, **k):
+        raise RuntimeError("db down")
+    try:
+        ps._deliver = _this_thread_only(lambda *a, **k: sent.append(a) or ("mid", 1), o[1])
+        ps._record = _this_thread_only(lambda st, r, key, meta: recorded.append((st, r)) or [{"id": 1}], o[2])
+        ps._finalise = _this_thread_only(lambda *a, **k: None, o[3])
+        ps._unconfigured = _this_thread_only(lambda ch: None, o[4])
+        db.execute_query = _this_thread_only(_boom, o[0])
+        r = ps.send_pick("public", "bot_v10_1x2", "simulated_bets", "00000000-0000-0000-0000-000000000001", "x")
+        assert r.status == "skipped" and r.reason == "pause_unreadable" and not sent, (r, sent)
+        db.execute_query = _this_thread_only(
+            lambda sql, *a, **k: ([{"publishing_paused": False}] if "publishing_paused" in sql else _boom()), o[0])
+        r = ps.send_pick("public", "bot_v10_1x2", "simulated_bets", "00000000-0000-0000-0000-000000000002", "x")
+        assert r.status == "skipped" and not sent, (r, sent)
+        db.execute_query = _this_thread_only(lambda sql, *a, **k: [{"n": 0}], o[0])
+        assert ps._no_audience("vip_dm", ) and ps._no_audience("public") is None
+    finally:
+        db.execute_query, ps._deliver, ps._record, ps._finalise, ps._unconfigured = o
 
 if __name__ == "__main__":
     main()

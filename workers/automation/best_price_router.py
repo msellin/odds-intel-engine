@@ -341,7 +341,7 @@ def _dispatch_unibet(pick: dict, decision: dict, *, execute: bool) -> dict:
         from workers.automation.placement_floor import pick_clears
         res = unibet_placer.place_bet(
             r["url"], name, min_odds=max(float(decision["odds_floor"]), float(_live_min)),
-            odds_lo=lo, odds_hi=hi, execute=execute, stake=STAKE_EUR,
+            odds_lo=lo, odds_hi=hi, execute=execute, stake=STAKE_EUR, pick=pick,
             # [[#162]] W4 pre-lock review: the WHOLE rule (ceilings + outlier cap too) at the live slip price.
             live_ok=lambda o, _p=pick: pick_clears(_p.get("bot_name"), _p.get("market"),
                                                    _p.get("selection"), o, _p.get("calibrated_prob")))

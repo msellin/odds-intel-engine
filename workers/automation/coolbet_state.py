@@ -273,27 +273,7 @@ def log_heal_attempt(*, triggered_by: str, result: dict,
         log.debug("log_heal_attempt failed (non-fatal): %s", e)
 
 
-def mark_prekickoff_run(result: dict) -> None:
-    """Write the pre-kickoff catch-net's per-fire heartbeat so /admin pages
-    and ad-hoc probes can verify the VPS's */5 cron actually ran without
-    tailing the VPS logs. Called from
-    `workers.jobs.coolbet_prekickoff_alert.run_prekickoff_alert` at the end
-    of every invocation, success OR no-op — a "healthy daemon, no
-    candidates" run still bumps the timestamp so a stale
-    `prekickoff_last_run_at` means the cron itself isn't firing.
-
-    Stored as compact JSON: {healthy, candidates, sent, skipped_dedup} —
-    same dict the job already returns to its caller, so no extra
-    computation."""
-    import json as _json
-    _safe_write(
-        """UPDATE coolbet_session_state
-           SET prekickoff_last_run_at = NOW(),
-               prekickoff_last_run_result = %s::jsonb
-           WHERE id = 1""",
-        (_json.dumps(result, default=str),),
-    )
-
+# mark_prekickoff_run deleted 2026-09-26 (#162): its only caller, the pre-KO catch-net, is gone.
 
 def mark_placer_heartbeat(placer: str, *, execute_requested: bool,
                           execute_effective: bool, refused_reason: str | None = None,

@@ -207,8 +207,6 @@ def _format_summary(s: dict) -> str:
     # PLACEMENT READY/BLOCKED readiness line above). No daemon-stale warning here.
     if hb_age is None or hb_age > SCHEDULER_HB_STALE_MIN * 60:
         warnings.append(f"🛑 Scheduler heartbeat {_fmt_age(hb_age)} ago (stale)")
-    if prekickoff_age is not None and prekickoff_age > CATCHNET_STALE_MIN * 60:
-        warnings.append(f"🛑 catch-net {_fmt_age(prekickoff_age)} ago (cron silent)")
     # Only flag JWT-low when token is still valid but TTL is shrinking
     # (proactive refresh window). A fully expired JWT is already covered
     # by the daemon-stale / the VPS-HB warnings above; a duplicate
@@ -234,7 +232,6 @@ def _format_summary(s: dict) -> str:
         f"   ↳ persisted DB token (odds/API path) — the UI placer does NOT need it; a live CDP session can be valid while this reads expired",
         f"🛰 Scheduler HB: {_fmt_age(hb_age)} ago · ok={bool(s.get('last_heartbeat_ok'))}"
         f"   ↳ odds/API path — NOT a real-money placement gate",
-        f"🚨 Catch-net: {_fmt_age(prekickoff_age)} ago · sent={prek_sent}",
         f"",
         f"📊 24h: {placed_24h} placed{_book_split} · W{won_24h}/L{lost_24h} "
         f"· staked €{float(activity.get('staked') or 0):.2f} · pnl €{pnl_24h:+.2f}",

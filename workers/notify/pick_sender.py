@@ -152,6 +152,24 @@ def _unconfigured(channel: str) -> Optional[str]:
     return ("channel_not_configured: " + ", ".join(missing)) if missing else None
 
 
+def _no_audience(channel: str) -> Optional[str]:
+    """[[#162]] review 2026-09-26: a VIP DM with NOBODY to send to is not a failed send — it was
+    recorded 'failed' ('no recipients reached') on every VIP pick, 58 in the first hours, so any
+    failure metric read as broken delivery. Same audience rule as telegram.send_telegram_to_users
+    (Pro/Elite with a linked chat). Unreadable → None: the send is attempted and its own outcome
+    recorded (this check can only reclassify an empty audience, never block a real one)."""
+    if channel != CHANNEL_VIP_DM:
+        return None
+    try:
+        from workers.api_clients.db import execute_query
+        from workers.notify.telegram import _TIER_SETS
+        r = execute_query("SELECT count(*) AS n FROM profiles WHERE telegram_chat_id IS NOT NULL "
+                          "AND tier::text = ANY(%s)", (list(_TIER_SETS.get("pro", ("pro", "elite"))),))
+        return "no_audience: no Pro/Elite user has linked Telegram" if r and int(r[0]["n"]) == 0 else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _deliver(channel: str, text: str, silent: bool, reply_markup: Optional[dict]):
     """(message_id, recipients) from the channel's transport. Never raises."""
     from workers.notify import telegram as tg
@@ -180,7 +198,8 @@ def send_pick(channel: str, bot: str, pick_table: str, pick_id, text: str, *,
     key = (channel, pick_table, str(pick_id))
     meta = (bot, str(match_id) if match_id else None, market, selection)
 
-    block = skip_reason or _pause_block() or _distribution_block(channel, bot) or _unconfigured(channel)
+    block = (skip_reason or _pause_block() or _distribution_block(channel, bot) or _unconfigured(channel)
+             or _no_audience(channel))
     if block:
         _record("skipped", block, key, meta)
         return PickSend("skipped", reason=block)

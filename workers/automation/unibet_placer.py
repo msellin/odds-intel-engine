@@ -64,7 +64,7 @@ def _clear_slip(page) -> None:
 
 def place_bet(event_url: str, outcome_name: str, min_odds: float,
               odds_lo: float, odds_hi: float, *, execute: bool = False,
-              stake: float = STAKE_EUR, live_ok=None) -> dict:
+              stake: float = STAKE_EUR, live_ok=None, pick: dict | None = None) -> dict:
     """Place (execute=True) or stage (execute=False) a single bet on unibet.ee.
 
     `outcome_name` is matched against the outcome button text (e.g. the home team for
@@ -77,7 +77,6 @@ def place_bet(event_url: str, outcome_name: str, min_odds: float,
     above lets the live price sit up to +12 per cent over the routed one, so without it a bot's own
     odds / edge ceilings and outlier cap were never checked at the price actually taken.
     """
-    from playwright.sync_api import sync_playwright
     out = {"event": event_url, "outcome": outcome_name, "execute": execute,
            "placed": False, "reason": None, "odds": None,
            "balance_before": None, "balance_after": None}
@@ -86,12 +85,21 @@ def place_bet(event_url: str, outcome_name: str, min_odds: float,
     # the money-gate lock. Run-level gate here, before the browser opens (the per-pick allowlist +
     # caps stay with the caller, which knows the bot). Staging (execute=False) is not gated.
     if execute:
-        from workers.automation.placement_gate import assert_run_may_place, PlacementRefused
+        from workers.automation.placement_gate import assert_run_may_place, assert_may_place, PlacementRefused
         try:
             assert_run_may_place()
         except PlacementRefused as e:
             out["reason"] = f"placement gate refused: {e}"
             return out
+        # [[#162]] design review 2026-09-26: the per-pick gate (allowlist, cutoff, caps, exposure,
+        # floor) lived only in the router caller, so any other caller staked unchecked — the "second
+        # path" the refactor removes. Real money now REQUIRES the pick; the full gate runs below at
+        # the live slip price, immediately before the click, like Coolbet's stage_bet.
+        if not pick:
+            out["reason"] = "placement gate refused: execute=True needs the pick (bot, match, market, selection)"
+            return out
+    # Imported only after the gate: a refused real-money call never touches the browser.
+    from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         try:
             ctx = ubs._get_context(pw)
@@ -118,7 +126,7 @@ def place_bet(event_url: str, outcome_name: str, min_odds: float,
         _clear_slip(page)
 
         # select the outcome: button whose text is "<outcome_name><odds>" with odds in band
-        pick = page.evaluate(
+        slip = page.evaluate(
             r"""(args) => {
               const {name, lo, hi} = args;
               const bs=[...document.querySelectorAll('[data-test-name="propositionOptionBtn"]')];
@@ -134,24 +142,32 @@ def place_bet(event_url: str, outcome_name: str, min_odds: float,
             }""",
             {"name": re.escape(outcome_name), "lo": odds_lo, "hi": odds_hi},
         )
-        if not pick:
+        if not slip:
             out["reason"] = "outcome not found on event page"
             return out
-        out["odds"] = pick["odds"]
+        out["odds"] = slip["odds"]
         # eligibility at the LIVE site price
-        if pick["odds"] < min_odds:
-            out["reason"] = f"live odds {pick['odds']} < min_odds {min_odds} — not eligible now"
+        if slip["odds"] < min_odds:
+            out["reason"] = f"live odds {slip['odds']} < min_odds {min_odds} — not eligible now"
             return out
+        if execute:
+            try:
+                assert_may_place(bot_name=pick.get("bot_name"), book="Unibet-Site", stake=float(stake),
+                                 pick=pick, held=[], kickoff_at=pick.get("match_date"),
+                                 odds=float(slip["odds"]), prob=pick.get("calibrated_prob"))
+            except PlacementRefused as e:
+                out["reason"] = f"placement gate refused at the live price {slip['odds']}: {e}"
+                return out
         if live_ok is not None:
             try:
-                _ok, _why = live_ok(float(pick["odds"]))
+                _ok, _why = live_ok(float(slip["odds"]))
             except Exception as e:  # noqa: BLE001 — fail closed: an unevaluable rule places nothing
                 _ok, _why = False, f"placement rule raised: {e}"
             if not _ok:
-                out["reason"] = f"placement rule at the live price {pick['odds']}: {_why}"
+                out["reason"] = f"placement rule at the live price {slip['odds']}: {_why}"
                 return out
 
-        page.locator(_OUTCOME).nth(pick["index"]).click(timeout=4000)
+        page.locator(_OUTCOME).nth(slip["index"]).click(timeout=4000)
         page.wait_for_timeout(2500)
         try:
             page.wait_for_selector(_STAKE_INPUT, timeout=8000)

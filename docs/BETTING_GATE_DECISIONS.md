@@ -1,5 +1,7 @@
 # Betting Gate Decisions — the single source of truth for edge/odds floors
 
+> **DELETED 2026-09-26 (#162 review):** the pre-kickoff "PLACE MANUALLY" catch-net `coolbet_prekickoff_alert` (cited below) is gone — it keyed on the retired daemon heartbeat, chose picks by maturity label and used the old floor. Real money runs only through the UI placer + best-price router (`docs/COOLBET_OWN_BETTING.md`).
+
 > ## ⚠️ METRIC BANNER 2026-09-23 — every `CLVpin` column below is RAW, and raw CLV does not break even at zero
 >
 > Added after [[#073]] swept the O/U odds floor with a different column and got a

@@ -1484,29 +1484,11 @@ def job_export_bot_config():
     _run_job("export_bot_config", _job_export_bot_config_impl)
 
 
-def _job_coolbet_prekickoff_alert_impl():
-    """COOLBET-DAEMON-ALERTS (2026-06-16): pre-kickoff catch-net. Runs every
-    5 min on the VPS, independent of the Mac. When the Mac daemon's
-    heartbeat is stale or its last tick errored AND a calibrated-bot pick
-    is approaching KO unplaced — push an urgent Telegram so the operator
-    can place from their phone.
-
-    Quiet on success: returns silently when daemon is healthy. Logs a
-    summary line when it fires."""
-    from workers.jobs.coolbet_prekickoff_alert import run_prekickoff_alert
-    counters = run_prekickoff_alert()
-    if not counters.get("healthy") and counters.get("candidates"):
-        console.print(
-            f"[yellow]Coolbet prekickoff catch-net: healthy={counters['healthy']} "
-            f"candidates={counters['candidates']} sent={counters['sent']} "
-            f"skipped_dedup={counters['skipped_dedup']}[/yellow]"
-        )
-
-
-def job_coolbet_prekickoff_alert():
-    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
-    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
-    _run_job("coolbet_prekickoff_alert", _job_coolbet_prekickoff_alert_impl)
+# #162 (2026-09-26): the pre-kickoff "PLACE MANUALLY" catch-net is DELETED. It keyed on the retired
+# Mac daemon's heartbeat (frozen since 2026-09-10, so it always read "daemon down"), picked
+# candidates by maturity label and gated them with the old coolbet_placer floor — a second
+# real-money path on different rules, silent only because placement was paused. The two live
+# executors (UI placer, best-price router) apply placement_floor.pick_clears + assert_may_place.
 
 
 def job_pipeline_runs_failure_digest():
@@ -3647,13 +3629,7 @@ def main():
                       name="Coolbet Daily Summary [08:00 UTC]",
                       max_instances=1, misfire_grace_time=3600)
 
-    # COOLBET-DAEMON-ALERTS (2026-06-16) — pre-kickoff catch-net, every 5 min.
-    # Independent of the Mac so it survives a dead daemon. Quiet on healthy.
-    scheduler.add_job(job_coolbet_prekickoff_alert,
-                      CronTrigger(minute="*/5"),
-                      id="coolbet_prekickoff_alert",
-                      name="Coolbet Pre-KO Catch-Net [5min]",
-                      max_instances=1, misfire_grace_time=60)
+    # coolbet_prekickoff_alert (pre-KO 'PLACE MANUALLY' catch-net) DELETED 2026-09-26, #162 — see above.
 
     # PIPELINE-RUNS-FAILURE-DIGEST (2026-06-22) — daily 08:00 UTC email
     # digest of jobs that failed in the last 24h. The CS2-PIPELINE-

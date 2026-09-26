@@ -1,5 +1,7 @@
 # Coolbet Automation Architecture
 
+> **DELETED 2026-09-26 (#162 review):** the pre-kickoff "PLACE MANUALLY" catch-net `coolbet_prekickoff_alert` (cited below) is gone — it keyed on the retired daemon heartbeat, chose picks by maturity label and used the old floor. Real money runs only through the UI placer + best-price router (`docs/COOLBET_OWN_BETTING.md`).
+
 > Single source of truth for how the Coolbet placement + ingest stack is wired.
 > Read this before touching any `workers/automation/coolbet_*.py`, the Mac launchd
 > job, or anything FlareSolverr-related.
