@@ -57072,5 +57072,21 @@ def test_smoke_patchers_run_alone():
     return f"{sum(1 for _, f in _registry if _patches_shared_db(f))} patcher tests run alone"
 
 
+@test("R2A-DEVIG-PREREG — NEW+ v1 stays proportional until the pre-registered power-de-vig round runs (#154)")
+def test_r2a_devig_prereg():
+    """[[#154]] R2-A: power de-vig measured +0.0020 log-loss on the consensus INPUT; the combiner round is
+    pre-registered on the forward window (n >= 4,000). v1 must not change underneath it — a silent switch to
+    power in market_consensus_1x2 would be train/serve skew for the live VIP and void the round."""
+    import inspect
+    from workers.model import market_consensus_1x2 as mc
+    t = inspect.getsource(mc._triples)
+    assert "p = inv / inv.sum(1, keepdims=True)" in t and "power_devig" not in t, "v1 must stay proportional until R2-A"
+    pre = _engine_path("dev/active/model-inputs-round2-prereg.md").read_text()
+    for pin in ("n ≥ 4,000", "+0.0010", "r1x2_comb_v2", "Parent row: [[#154]]"):
+        assert pin in pre, pin
+    assert "r2a_devig_round_due" in _engine_path("ops/verify/154-r2a-devig-round-due.yml").read_text()
+    return "v1 proportional; R2-A pre-registered with its reminder"
+
+
 if __name__ == "__main__":
     main()

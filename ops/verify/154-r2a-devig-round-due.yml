@@ -1,0 +1,14 @@
+# REMINDER, not a health check: #154 round R2-A (power de-vig in NEW+, pre-registered in
+# dev/active/model-inputs-round2-prereg.md) is run ONCE when the forward window (kickoffs from
+# 2026-09-25) holds >= 4,000 settled matches with a gated NEW+ prediction. This check FAILS
+# (→ operator Telegram) at that point — the cue to run the round. Do not look earlier.
+task: "#154"
+checks:
+  - name: r2a_devig_round_due
+    mode: invariant
+    sql: |
+      SELECT count(*) FROM matches m
+        JOIN rating_1x2_predictions r ON r.match_id = m.id AND r.model_version = 'r1x2_comb_v1' AND r.gated
+       WHERE m.status = 'finished' AND m.score_home IS NOT NULL AND m.date >= '2026-09-25'
+    expect: "< 4000"
+    expires: "2026-11-30T00:00:00Z"
