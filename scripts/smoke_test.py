@@ -53648,6 +53648,41 @@ def test_market_consensus_1x2():
     assert abs(c.pin_h - (1/2.0) / (1/2.0 + 1/3.5 + 1/4.0)) < 1e-9, "Pinnacle must be its own de-vigged input"
 
 
+@test("SERVED-P-FRESH-AT-DECISION — #176 combined refresh chained before the bots read; O/U served p = fresh Pinnacle")
+def test_served_p_fresh_at_decision():
+    """[[#176]] 2026-09-26. The NEW+ / combined-O/U refresh ran at :10/:40, five minutes AFTER the
+    :05/:35 betting refresh, so every decision read a ~25-min-old probability written before the odds
+    it was compared with (bot_v10_ou_comb_v1: over 2.5 @ 2.62 on p 0.4201 while Pinnacle's 02:00 quote
+    de-vigs to 0.3447, EV -9.7%). Pins: (1) run_betting calls the refresh before run_morning, and no
+    :10/:40 cron re-appears; (2) the pipeline drops combined rows older than SERVED_P_MAX_AGE_MIN;
+    (3) behavioural — a fresh (<= 3 h) Pinnacle quote overrides the stored O/U p, a stale one does not."""
+    import pandas as pd
+    from workers.model.combined_ou import pinnacle_from_legs, served_at_decision
+    bp = _engine_path("workers/jobs/betting_pipeline.py").read_text(encoding="utf-8")
+    rb = bp[bp.index("def run_betting"):]
+    assert rb.index("refresh_served_probabilities()") < rb.index("run_morning("), \
+        "the combined refresh must run BEFORE the bots evaluate"
+    sched = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
+    assert 'id="combined_1x2_refresh"' not in sched, "the :10/:40 cron re-appeared — it runs after the decision"
+    pl = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text(encoding="utf-8")
+    assert pl.count("SERVED_P_MAX_AGE_MIN") >= 2 and "served_at_decision(ou_model_by_match" in pl
+    now = 1_000_000.0
+    legs = pd.DataFrame([
+        ("m1", "over_under_25", "Pinnacle", "over", 2.55, now - 360), ("m1", "over_under_25", "Pinnacle", "under", 1.45, now - 360),
+        ("m2", "over_under_25", "Pinnacle", "over", 1.51, now - 4 * 3600), ("m2", "over_under_25", "Pinnacle", "under", 2.39, now - 4 * 3600),
+        ("m1", "over_under_25", "Bet365", "over", 2.62, now - 60), ("m1", "over_under_25", "Bet365", "under", 1.44, now - 60),
+    ], columns=["match_id", "market", "bookmaker", "selection", "odds", "ts"])
+    pin = pinnacle_from_legs(legs, now, 3.0)
+    assert list(pin.match_id) == ["m1"], "a 4 h-old Pinnacle quote and a soft book must not count"
+    stored = {("m1", "over_under_25"): (0.4201, None), ("m2", "over_under_25"): (0.5975, None),
+              ("m1", "over_under_35"): (0.20, None)}
+    out = served_at_decision(stored, pin)
+    assert abs(out[("m1", "over_under_25")][0] - 0.3447) < 5e-4, out   # the owner's case, power de-vig
+    assert out[("m2", "over_under_25")] == stored[("m2", "over_under_25")], "no fresh Pinnacle -> stored p"
+    assert out[("m1", "over_under_35")] == stored[("m1", "over_under_35")], "other line untouched"
+    assert served_at_decision(stored, pinnacle_from_legs(legs.iloc[2:4], now, 3.0)) == stored
+
+
 @test("COMBINED-1X2 — #141 per-group combiner: AF only where unpriced, rule fallback, probabilities valid, refresh wired")
 def test_combined_1x2():
     """COMBINED-1X2 ([[#141]] round 3b, COMB-HYB). Adopted on a pre-registered test
@@ -53680,9 +53715,9 @@ def test_combined_1x2():
     only_p = d.iloc[:3].copy(); only_p[["c_h", "c_d", "c_a"]] = np.nan
     Pp, gp = predict(only_p, params)                                          # 'P' has no params -> Pinnacle
     assert (gp == "P").all() and np.allclose(Pp, only_p[["pin_h", "pin_d", "pin_a"]].to_numpy())
-    sched = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
-    assert 'id="combined_1x2_refresh"' in sched
-    body = sched[sched.index("def job_combined_1x2_refresh"):sched.index("def job_weekly_meta_retrain")]
+    # [[#176]] the refresh is chained into run_betting (no :10/:40 cron) — still a subprocess.
+    bp = _engine_path("workers/jobs/betting_pipeline.py").read_text(encoding="utf-8")
+    body = bp[bp.index("def refresh_served_probabilities"):bp.index("def run_betting")]
     assert '"workers.jobs.rating_1x2_shadow", "--refresh"' in body, "refresh must run in a subprocess"
     job = _engine_path("workers/jobs/rating_1x2_shadow.py").read_text(encoding="utf-8")
     assert "INTO predictions" not in job and "to_datetime" not in job

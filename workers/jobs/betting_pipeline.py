@@ -149,6 +149,44 @@ def _run_coolbet_signal() -> None:
         )
 
 
+def refresh_served_probabilities() -> bool:
+    """[[#176]] SERVED-PROBABILITY-FRESH-AT-DECISION — re-apply the stored NEW+ (1X2) and
+    combined O/U combiners to the CURRENT odds immediately before the bots read them.
+
+    WHY HERE. Until 2026-09-26 this ran as its own cron at :10/:40, five minutes AFTER the
+    :05/:35 betting refresh, so every decision read a probability written ~25 min earlier,
+    against odds fetched at :00/:30 — i.e. before the price it was compared with existed.
+    Measured: bot_v10_ou_comb_v1 took over 2.5 @ 2.62 at 02:06 on p 0.4201 (the 01:40 row,
+    combined model: Pinnacle had not priced the line yet) while Pinnacle's 02:00 quote
+    de-vigs to 0.3447, EV -9.7%. Chaining it into run_betting (not rescheduling to e.g.
+    :03/:33) makes the order a property of the code, not of two cron minutes and the odds
+    job's run time (odds_refresh takes 55-75 s and has overrun before) — and every caller
+    of run_betting (morning chain step 7, betting_refresh) gets it for free.
+
+    Subprocess for the same reason as the scheduler job it replaces: pandas 3.0.4 segfaults
+    on tz-aware takes on the VPS, and a native crash must not take the scheduler down.
+    Never fatal: on failure the pipeline's freshness guard (daily_pipeline_v2,
+    SERVED_P_MAX_AGE_MIN) drops the stale rows and those bots idle this cycle, which is the
+    correct outcome — the failure is recorded as pipeline_runs 'combined_1x2_refresh'."""
+    import subprocess
+    run_id = log_pipeline_start("combined_1x2_refresh")
+    try:
+        r = subprocess.run([sys.executable, "-m", "workers.jobs.rating_1x2_shadow", "--refresh"],
+                           cwd=str(Path(__file__).parent.parent.parent), timeout=600,
+                           capture_output=True, text=True)
+        console.print(r.stdout[-800:])
+        if r.returncode != 0:
+            raise RuntimeError(f"combined refresh exit {r.returncode}: {r.stderr[-1500:]}")
+        if run_id:
+            log_pipeline_complete(run_id, metadata={"chained": "run_betting"})
+        return True
+    except Exception as e:
+        console.print(f"[yellow]Combined 1X2/O-U refresh failed — NEW+/combined-O/U bots idle this cycle: {e}[/yellow]")
+        if run_id:
+            log_pipeline_failed(run_id, str(e)[:2000])
+        return False
+
+
 def run_betting(cohort: str | None = None):
     """
     Run the betting pipeline (Phase 2 — DB-only, no API calls).
@@ -156,6 +194,10 @@ def run_betting(cohort: str | None = None):
 
     cohort: 'morning', 'midday', or 'pre_ko'. Defaults to current time window.
     """
+    # [[#176]] the model rows the bots read must be written from the odds they are compared
+    # with. Before the kill-switch check on purpose: this is now the ONLY scheduled writer of
+    # the 30-min refresh, and vip_guard / ou_sharp_outlier read the same rows.
+    refresh_served_probabilities()
     from workers.utils.kill_switches import is_disabled
     if is_disabled("paper_betting"):
         return

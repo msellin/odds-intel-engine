@@ -1,0 +1,26 @@
+# #176 — the NEW+ / combined-O/U refresh runs chained at the start of run_betting (no :10/:40 cron).
+task: "#176"
+checks:
+  - name: refresh_chained_into_betting
+    mode: eventually
+    sql: |
+      SELECT count(*) FROM pipeline_runs
+       WHERE job_name = 'combined_1x2_refresh' AND status = 'completed'
+         AND metadata->>'chained' = 'run_betting' AND started_at > now() - interval '2 hours'
+    expect: ">= 3"
+    expires: "2026-09-28T00:00:00Z"
+  - name: no_standalone_10_40_refresh
+    mode: eventually
+    sql: |
+      SELECT count(*) FROM pipeline_runs
+       WHERE job_name = 'combined_1x2_refresh' AND extract(minute FROM started_at) IN (10, 40)
+         AND started_at > now() - interval '3 hours'
+    expect: "== 0"
+    expires: "2026-09-28T00:00:00Z"
+  - name: refresh_not_failing
+    mode: invariant
+    sql: |
+      SELECT count(*) FROM pipeline_runs
+       WHERE job_name = 'combined_1x2_refresh' AND status = 'failed' AND started_at > now() - interval '6 hours'
+    expect: "<= 1"
+    expires: "2026-10-03T00:00:00Z"

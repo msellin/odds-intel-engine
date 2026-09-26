@@ -3080,10 +3080,15 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         try:
             from workers.jobs.rating_1x2_shadow import MODEL_VERSION as _R1X2_VER, COMB_VERSION as _C1X2_VER
             _r1x2_maps = {_R1X2_VER: rating_1x2_by_match, _C1X2_VER: combined_1x2_by_match}
+            # [[#176]] a NEW+ (combined) row counts only if the refresh chained at the start of
+            # run_betting wrote it from the CURRENT odds; an older row is a probability from before
+            # the price it would be compared with, so the bot skips (drop_no_rating) instead.
+            from workers.jobs.rating_1x2_shadow import SERVED_P_MAX_AGE_MIN as _FRESH_MIN
             for _rr in _eq_pin(
                 """SELECT match_id, model_version, p_home, p_draw, p_away FROM rating_1x2_predictions
-                    WHERE model_version = ANY(%s) AND gated AND match_id = ANY(%s::uuid[])""",
-                (list(_r1x2_maps), all_match_ids_for_signals),
+                    WHERE model_version = ANY(%s) AND gated AND match_id = ANY(%s::uuid[])
+                      AND (model_version <> %s OR updated_at > now() - make_interval(mins => %s))""",
+                (list(_r1x2_maps), all_match_ids_for_signals, _C1X2_VER, _FRESH_MIN),
             ):
                 _r1x2_maps[_rr["model_version"]][str(_rr["match_id"])] = (
                     float(_rr["p_home"]), float(_rr["p_draw"]), float(_rr["p_away"]))
@@ -3091,14 +3096,30 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             console.print(f"  [yellow]Rating 1X2 load failed (non-critical; rating bot idles): {e}[/yellow]")
 
         try:
-            from workers.model.combined_ou import MODEL_VERSION as _OU_VER
+            from workers.model.combined_ou import (MODEL_VERSION as _OU_VER, fresh_pinnacle_over,
+                                                   served_at_decision)
+            from workers.jobs.rating_1x2_shadow import SERVED_P_MAX_AGE_MIN as _FRESH_MIN
             for _ro in _eq_pin(
                 """SELECT match_id, market, p_over, p_pin FROM ou_model_predictions
-                    WHERE model_version = %s AND match_id = ANY(%s::uuid[])""",
-                (_OU_VER, all_match_ids_for_signals),
+                    WHERE model_version = %s AND match_id = ANY(%s::uuid[])
+                      AND updated_at > now() - make_interval(mins => %s)""",
+                (_OU_VER, all_match_ids_for_signals, _FRESH_MIN),
             ):
                 ou_model_by_match[(str(_ro["match_id"]), _ro["market"])] = (
                     float(_ro["p_over"]), float(_ro["p_pin"]) if _ro["p_pin"] is not None else None)
+            # [[#176]] served p AT DECISION TIME: where Pinnacle has a pre-match quote on that exact
+            # line <= QUOTE_MAX_AGE_H old, the served p IS that quote's power de-vig — never an
+            # older stored p (combined_ou.served_at_decision; one implementation via served_over).
+            if ou_model_by_match:
+                try:
+                    import time as _time
+                    from workers.api_clients.db import get_conn as _gc_ou
+                    with _gc_ou() as _c_ou:
+                        _pin_now = fresh_pinnacle_over(
+                            _c_ou, sorted({k[0] for k in ou_model_by_match}), _time.time())
+                    ou_model_by_match = served_at_decision(ou_model_by_match, _pin_now)
+                except Exception as e:   # rows stay the just-refreshed ones (<= _FRESH_MIN old)
+                    console.print(f"  [yellow]O/U decision-time Pinnacle override failed: {e}[/yellow]")
         except Exception as e:
             console.print(f"  [yellow]Combined O/U load failed (non-critical; O/U model bots idle): {e}[/yellow]")
 

@@ -628,7 +628,8 @@ opening prices: −0.0014, CI touches 0); books-only 0.9619 vs consensus 0.9749;
 0.9849. Pre-registered, selected on 08-01..08-30, confirmed once — plan doc "ROUND 3b".
 
 Serving: the rating job (05:30/17:30) also refits the combiner on finished matches since 2026-05-01 and
-stores it (`combiner_1x2_params`); `job_combined_1x2_refresh` (:10/:40) re-applies it to **current**
+stores it (`combiner_1x2_params`); the combined refresh (chained as the first step of every betting run since
+2026-09-26, [[#176]] — it used to run at :10/:40, AFTER the :05/:35 decisions) re-applies it to **current**
 prices and writes `rating_1x2_predictions` rows with `model_version = r1x2_comb_v1` and `sources` = the
 group used. Shadow only, like 4.4.
 
@@ -2171,7 +2172,17 @@ O3: requiring the quote ≥ 12 h before kickoff lifts it to CLV +7.5% / +6.9% wi
 the other books' consensus to be beaten too: +6.6% / +4.2%. Live: `bot_ou_sharp_early_v1`, `bot_ou_sharp_2anchor_v1`, paper.
 **Combined O/U model in production (#152, 2026-09-25).** `workers/model/combined_ou.py` (`ou_comb_v1`, byte-identical
 predictions to the #149 O1 research model) is fitted twice daily inside the 1X2 rating job and refreshed every 30 min;
-stored in `ou_model_predictions`. Served P(over) = Pinnacle where it prices the line, else the combined model. On the O1
+stored in `ou_model_predictions`. Served P(over) = Pinnacle where it prices the line, else the combined model.
+**Served probability at decision time ([[#176]], 2026-09-26).** The probability a bot compares with a price must
+be computed from odds at least as new as that price. Two rules: (1) the NEW+ and O/U combiners are re-applied
+immediately before every betting evaluation (chained in `run_betting`), and the pipeline ignores any combined row
+older than 20 min; (2) for O/U, at decision time, where Pinnacle has a pre-match quote on that exact line ≤ 3 h old
+(O/U EARLY's freshness), the served p IS that quote's power de-vig (`combined_ou.served_at_decision`, via
+`served_over`), never an older stored p. Before this, refresh ran five minutes after the decision; the picks
+concentrated exactly where Pinnacle had just priced a line the stored row still priced from the books-only group
+(e.g. over 2.5 @ 2.62 on p 0.420 vs Pinnacle 0.345, EV −9.7%). On picks reconstructed over the 7 days to 2026-09-26, the fresh p
+would have removed 44/91 NEW+ EV5, 9/108 NEW+ EV3 and 21/26 combined-O/U picks — their recorded edge was mostly
+staleness, so their early records overstate the rule. On the O1
 holdout it beat the served O/U ensemble on every line (1.5: 0.5655 vs 0.5934; 2.5: 0.6738 vs 0.7086; 3.5: 0.6428 vs 0.6961 —
 the ensemble was worse than the base rate on all three).
 **Existing model bots on the new models (#152 step 3, 2026-09-25).** A per-bot counterfactual (12 configs each, select/confirm

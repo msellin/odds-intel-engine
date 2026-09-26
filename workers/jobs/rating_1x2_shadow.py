@@ -77,6 +77,10 @@ def _load(conn) -> pd.DataFrame:
 
 
 COMB_VERSION = "r1x2_comb_v1"
+# [[#176]] The pipeline reads a combined (NEW+ 1X2 / combined O/U) row only if it was written at
+# most this long ago. The refresh runs chained at the start of run_betting (seconds before the
+# read), so a row older than this means the refresh failed and the row predates the odds.
+SERVED_P_MAX_AGE_MIN = 20
 COMB_TRAIN_FROM_EPOCH = 1777593600.0     # 2026-05-01: multi-book history starts here
 
 

@@ -1169,22 +1169,19 @@ def job_rating_1x2_shadow():
 
 
 def job_combined_1x2_refresh():
-    """COMBINED-1X2 refresh ([[#141]] round 3b) — every 30 min, re-apply the latest
-    stored combiner (fitted twice daily by job_rating_1x2_shadow) to CURRENT bookmaker
-    prices for the next 2 days' fixtures. Prices move towards kickoff, and the combined
-    model is only as good as the price it reads. SHADOW ONLY (rating_1x2_predictions,
-    model_version r1x2_comb_v1). Subprocess for the same reason as the rating job."""
-    import subprocess
+    """COMBINED-1X2 refresh ([[#141]] round 3b) — re-apply the latest stored combiners (NEW+ 1X2
+    and combined O/U) to CURRENT bookmaker prices. [[#176]] (2026-09-26): NO LONGER SCHEDULED.
+    It ran at :10/:40, five minutes after the :05/:35 betting refresh, so every decision read a
+    ~25-min-old probability; it now runs chained at the start of run_betting()
+    (workers/jobs/betting_pipeline.py refresh_served_probabilities), immediately before the bots
+    read it. Kept for manual runs; same subprocess, same pipeline_runs job name."""
+    from workers.jobs.betting_pipeline import refresh_served_probabilities
 
     def _run():
-        r = subprocess.run([sys.executable, "-m", "workers.jobs.rating_1x2_shadow", "--refresh"],
-                           cwd=str(Path(__file__).parent.parent), timeout=600,
-                           capture_output=True, text=True)
-        console.print(r.stdout[-800:])
-        if r.returncode != 0:
-            raise RuntimeError(f"combined_1x2_refresh exit {r.returncode}: {r.stderr[-1500:]}")
+        if not refresh_served_probabilities():
+            raise RuntimeError("combined_1x2_refresh failed (see pipeline_runs)")
 
-    _run_job("combined_1x2_refresh", _run)
+    _run_job("combined_1x2_refresh_manual", _run)
 
 
 def job_ou_sharp_outlier():
@@ -3556,11 +3553,10 @@ def main():
                       id="rating_1x2_shadow", name="1X2 rating model shadow 05:30/17:30",
                       max_instances=1, misfire_grace_time=1800)
 
-    # COMBINED-1X2 refresh ([[#141]]) — every 30 min at :10/:40 (clear of the :05/:35
-    # betting refresh so the pipeline reads a fresh combined price on its next pass).
-    scheduler.add_job(job_combined_1x2_refresh, CronTrigger(minute="10,40"),
-                      id="combined_1x2_refresh", name="Combined 1X2 refresh :10/:40",
-                      max_instances=1, misfire_grace_time=600)
+    # COMBINED-1X2 refresh ([[#141]]) — [[#176]] 2026-09-26: the :10/:40 cron is GONE. It ran five
+    # minutes AFTER the :05/:35 betting refresh, so bots decided on a probability written before the
+    # odds they compared it with. It now runs chained at the start of run_betting()
+    # (betting_pipeline.refresh_served_probabilities) — morning chain step 7 and every betting refresh.
 
     # O/U SHARP-OUTLIER ([[#149]]) — :14/:44, after the :00/:30 odds refresh and the :05/:35 betting refresh.
     scheduler.add_job(job_ou_sharp_outlier, CronTrigger(minute="14,44"),

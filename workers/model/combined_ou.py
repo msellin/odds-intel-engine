@@ -48,9 +48,10 @@ def logit(p) -> np.ndarray:
     return np.log(p / (1 - p))
 
 
-def fetch_legs(conn, match_ids: list[str]) -> pd.DataFrame:
-    """Latest pre-kickoff O/U leg per (match, line, book, side)."""
-    books = list(CONSENSUS_BOOKS) + ["Pinnacle"]
+def fetch_legs(conn, match_ids: list[str], books: list[str] | None = None) -> pd.DataFrame:
+    """Latest pre-kickoff O/U leg per (match, line, book, side). `books` defaults to the
+    consensus books + Pinnacle; the decision-time override passes ["Pinnacle"]."""
+    books = list(books) if books else list(CONSENSUS_BOOKS) + ["Pinnacle"]
     q = """
         SELECT DISTINCT ON (o.match_id, o.market, o.bookmaker, o.selection)
                o.match_id::text, o.market, o.bookmaker, o.selection, o.odds::float8,
@@ -167,3 +168,48 @@ def served_over(d: pd.DataFrame, p_comb: np.ndarray) -> np.ndarray:
     pm = d.pin_over.notna().to_numpy()
     s[pm] = d.pin_over.to_numpy(float)[pm]
     return s
+
+
+# ── SERVED p AT DECISION TIME ([[#176]], 2026-09-26) ──────────────────────────────────
+# ou_model_predictions is written by the combined refresh; a bot must never decide on a
+# row written before Pinnacle's CURRENT quote landed. Measured: bot_v10_ou_comb_v1 took
+# over 2.5 @ 2.62 at 02:06 on p 0.4201 (combined model, written 01:40 before Pinnacle
+# priced the line) while Pinnacle's 02:00 quote de-vigs to 0.3447 -> EV -9.7%. So at
+# decision time the served p is re-derived: Pinnacle's latest pre-match quote on that exact
+# line, if it is <= QUOTE_MAX_AGE_H old (the same freshness as VIP O/U EARLY), else the
+# stored p. One implementation: fetch_legs + consensus (power de-vig) + served_over.
+def fresh_pinnacle_over(conn, match_ids: list[str], now_ts: float,
+                        max_age_h: float | None = None) -> pd.DataFrame:
+    """(match_id, market, pin_over) from Pinnacle's latest pre-match O/U quote, only where
+    both legs are <= max_age_h old at now_ts (default: ou_sharp_outlier.QUOTE_MAX_AGE_H)."""
+    if max_age_h is None:
+        from workers.jobs.ou_sharp_outlier import QUOTE_MAX_AGE_H as max_age_h
+    legs = fetch_legs(conn, match_ids, books=["Pinnacle"]) if match_ids else pd.DataFrame()
+    return pinnacle_from_legs(legs, now_ts, max_age_h)
+
+
+def pinnacle_from_legs(legs: pd.DataFrame, now_ts: float, max_age_h: float) -> pd.DataFrame:
+    """Pure part of fresh_pinnacle_over (behaviour-tested in smoke)."""
+    cols = ["match_id", "market", "pin_over"]
+    if legs is None or legs.empty:
+        return pd.DataFrame(columns=cols)
+    legs = legs[(legs.bookmaker == "Pinnacle") & (now_ts - legs.ts <= max_age_h * 3600)]
+    if legs.empty:
+        return pd.DataFrame(columns=cols)
+    c = consensus(legs)
+    return c.dropna(subset=["pin_over"])[cols] if "pin_over" in c else pd.DataFrame(columns=cols)
+
+
+def served_at_decision(stored: dict, pin: pd.DataFrame) -> dict:
+    """stored: {(match_id, market): (p_over, p_pin)} from ou_model_predictions. Returns the same
+    shape with p_over = fresh Pinnacle where `pin` prices the line (served_over's rule), else
+    the stored p unchanged."""
+    if not stored or pin is None or pin.empty:
+        return dict(stored)
+    keys = list(stored)
+    d = pd.DataFrame({"match_id": [k[0] for k in keys], "market": [k[1] for k in keys]})
+    d = d.merge(pin[["match_id", "market", "pin_over"]], on=["match_id", "market"], how="left")
+    s = served_over(d, np.array([stored[k][0] for k in keys], float))
+    fresh = d.pin_over.to_numpy()
+    return {k: (float(s[i]), (float(fresh[i]) if pd.notna(fresh[i]) else stored[k][1]))
+            for i, k in enumerate(keys)}
