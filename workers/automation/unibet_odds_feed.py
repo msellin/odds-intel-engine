@@ -108,6 +108,27 @@ def _ou_tag(template: str, line: float) -> str | None:
     return template.format(n=f"{round(line * 10):02d}")
 
 
+# UNIBET-SITE-AH-LINE ([[#132]], 2026-09-26): the committed fixture was trimmed, so nobody has seen a FULL
+# live `2_way_handicap` proposition. The feed reads through the operator's logged-in tab (DataDome), so an
+# ad-hoc capture is off the table; instead the first few AH propositions a process parses are logged raw
+# (every key, no extra request) — read them from the scheduler journal (`grep UNIBET-AH-SAMPLE`) to see
+# whether the line is carried anywhere (a key, the displayName, an option field). Remove once answered.
+_AH_SAMPLE_MAX = 3
+_ah_samples_logged = 0
+
+
+def _sample_ah_proposition(contest_name, prop: dict) -> None:
+    global _ah_samples_logged
+    if _ah_samples_logged >= _AH_SAMPLE_MAX:
+        return
+    _ah_samples_logged += 1
+    try:
+        import json as _json
+        log.info("UNIBET-AH-SAMPLE %s: %s", contest_name, _json.dumps(prop, ensure_ascii=False, default=str)[:4000])
+    except Exception:  # noqa: BLE001 — diagnostics only
+        pass
+
+
 def parse_contest(contest_json: dict) -> list[tuple[str, str, float, float | None]]:
     """(market, selection, odds, handicap_line) rows in the shared vocabulary.
 
@@ -146,6 +167,8 @@ def parse_contest(contest_json: dict) -> list[tuple[str, str, float, float | Non
     for p in props:
         ptype = str(p.get("propositionType") or "")
         opts = p.get("options") or []
+        if ptype == "2_way_handicap":
+            _sample_ah_proposition(c.get("name"), p)
 
         # 1X2 — normal-time result ONLY. Excludes `1x2_{xup}up` (2-up promo
         # variant, team-name options) and `3_way_handicap` (also "1"/"X"/"2").

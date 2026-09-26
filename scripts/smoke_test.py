@@ -57306,5 +57306,19 @@ def test_coolbet_pass_pacing():
     return f"pass cap {ce._pass_budget()} of {fp.budget('Coolbet')}/h"
 
 
+@test("UNIBET-AH-SAMPLE — the Unibet parser logs a few raw 2-way-handicap propositions, no extra requests (#132)")
+def test_unibet_ah_sample():
+    """[[#132]]: the committed fixture is trimmed, so whether Unibet's live payload carries the AH line is
+    unknown; the feed reads via the operator's logged-in tab, so the answer comes from logging what the
+    normal sweep already parses (first _AH_SAMPLE_MAX per process). Parsing is unchanged: AH stays unparsed."""
+    import json
+    from workers.automation import unibet_odds_feed as u
+    rows = u.parse_contest(json.load(open(_engine_path("tests/fixtures/unibet_contest_derby.json"))))
+    assert not any(r[0] == "asian_handicap" for r in rows), "AH must stay unparsed until the line is known"
+    assert u._AH_SAMPLE_MAX <= 5 and "_sample_ah_proposition(c.get(\"name\"), p)" in _engine_path(
+        "workers/automation/unibet_odds_feed.py").read_text()
+    return "sampling wired; AH still not parsed"
+
+
 if __name__ == "__main__":
     main()
