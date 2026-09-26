@@ -1,0 +1,20 @@
+# [[#121]] Phase 1 data-quality check: API-Football's final score (what we settle on) vs Tonybet's own
+# result (book_match_results). A disagreement on a match that carries any leg is a possible mis-settlement —
+# this fails (→ operator Telegram) so it is looked at before anyone trusts that leg. 1 case so far in 367
+# overlaps (Hapoel Ramat HaSharon v Hapoel Sderot 2026-09-23: AF 1-0, Tonybet 3-1). Two-day window, so an
+# old case drops out once looked at.
+task: "#121"
+checks:
+  - name: af_vs_tonybet_final_score_on_matches_with_legs
+    mode: invariant
+    sql: |
+      SELECT count(*) FROM book_match_results r JOIN matches m ON m.id = r.match_id
+       WHERE m.status = 'finished' AND m.score_home IS NOT NULL AND r.ft_home IS NOT NULL
+         AND (r.ft_home <> m.score_home OR r.ft_away <> m.score_away)
+         AND m.date > now() - interval '2 days'
+         AND (EXISTS (SELECT 1 FROM simulated_bets s WHERE s.match_id = m.id)
+              OR EXISTS (SELECT 1 FROM shadow_bets x WHERE x.match_id = m.id)
+              OR EXISTS (SELECT 1 FROM picks_forward_test p WHERE p.match_id = m.id)
+              OR EXISTS (SELECT 1 FROM real_bets b WHERE b.match_id = m.id))
+    expect: "== 0"
+    expires: "2026-12-31T00:00:00Z"
