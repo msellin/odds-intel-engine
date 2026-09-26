@@ -23557,13 +23557,12 @@ def _():
     #     that forbids the explanation along with the link teaches the next
     #     reader to delete the explanation.
     import re as _re
+    # CHANGED 2026-09-26 (PICKS-PAGE-GATE, owner): /performance is no longer the model-era ledger — since
+    # #159 it is the ONE per-bot record (bot_performance, sharp-anchor CLV) for every bot whose picks reach
+    # /picks, and the owner moved the volume there ("keep the volume on /performance, filter /picks"). The
+    # shortlist links to it so every pick not shown is one click away. A link is now REQUIRED.
     _links = _re.findall(r'href=[{"\'`]+\s*/performance', page)
-    assert not _links, (
-        "/picks links to /performance again. That ledger belongs to the "
-        "model-anchored method and was priced on the manufactured O/U edge; "
-        "linking it from these picks implies a track record that does not "
-        "transfer to them."
-    )
+    assert _links, "/picks must link to /performance, where every pick and each bot's full record lives"
     # (4) the model-era ledger endpoint keeps its own narrow cohort
     assert "PUBLIC_MATURITY_LABELS" in track, (
         "track-record must gate on PUBLIC_MATURITY_LABELS — production "
@@ -53073,6 +53072,10 @@ def test_anon_least_privilege():
     }, f"anon grant list changed: {sorted(granted)} — update this test deliberately"
     for base in ("picks_forward_test", "picks_board", "shadow_bets", "coolbet_placement_attempts"):
         assert base not in granted, f"{base} must stay private (serve it through a *_public view)"
+    # Later public reads, each deliberate: 469 picks_page (the /picks shortlist view; its rule table stays private)
+    m469 = _engine_path("supabase/migrations/469_picks_page_gate.sql").read_text()
+    assert "GRANT SELECT ON public.picks_page TO anon, authenticated;" in m469
+    assert "REVOKE ALL ON public.picks_page_rule FROM anon, authenticated;" in m469
     # 405: new FUNCTIONS are not executable by anon/PUBLIC by default either (a future
     # SECURITY DEFINER function would otherwise be public the moment it is created)
     f405 = _engine_path("supabase/migrations/405_anon_no_default_function_execute.sql").read_text()
@@ -57318,6 +57321,31 @@ def test_unibet_ah_sample():
     assert u._AH_SAMPLE_MAX <= 5 and "_sample_ah_proposition(c.get(\"name\"), p)" in _engine_path(
         "workers/automation/unibet_odds_feed.py").read_text()
     return "sampling wired; AH still not parsed"
+
+
+@test("PICKS-PAGE-GATE — /picks lists a shortlist (proven lines whole, TESTING only at EV >= rule), every pick still recorded")
+def test_picks_page_gate():
+    """Owner 2026-09-26: /picks showed 124 picks (60 + 31 from two TESTING twins). Migration 469: view
+    picks_page = picks_public_all filtered by picks_page_rule — pre-registered sharp arm + ACTIVE always,
+    others only at EV >= testing_min_ev, one gated pick per match (earliest wins, always-shown never capped).
+    Display only: records, /performance and Telegram are unchanged."""
+    m = _engine_path("supabase/migrations/469_picks_page_gate.sql").read_text()
+    for pin in ("(p.arm = 'live' OR b.maturity_label = 'active') AS always_shown",
+                "p.fair_prob * p.odds - 1 AS ev", "e.ev >= r.testing_min_ev",
+                "ORDER BY always_shown DESC, published_at, id",
+                "WHERE NOT r.one_per_match OR ranked.always_shown OR ranked.match_rank = 1",
+                "VALUES (true, 0.07, true,"):
+        assert pin in m, pin
+    lib = _web_path("src/lib/forward-test-picks.ts").read_text()
+    assert '.from("picks_page")' in lib, "/picks must read the gated view"
+    api = _web_path("src/app/api/v1/upcoming/route.ts").read_text()
+    assert "fetchPublicPicks" in api, "the public API serves the same shortlist through the shared fetcher"
+    assert "/performance" in _web_path("src/app/picks/page.tsx").read_text()
+    from workers.api_clients.db import execute_query
+    if execute_query("SELECT to_regclass('public.picks_page') AS r", [])[0]["r"]:
+        bad = execute_query("""SELECT count(*) AS n FROM picks_page p WHERE p.id NOT IN (SELECT id FROM picks_public_all)""", [])[0]["n"]
+        assert bad == 0, "picks_page may only narrow picks_public_all"
+    return "shortlist view + rule; API and records untouched"
 
 
 if __name__ == "__main__":
