@@ -641,7 +641,7 @@ def already_published_markets(arms: tuple = PUBLISHED_ARMS) -> set:
         return None
 
 
-def daily_room() -> int:
+def daily_room(arms: tuple | None = None) -> int:
     """How many more live picks may publish today, against the RUNAWAY BREAKER.
 
     This is no longer a cap on the day's picks — the owner removed that on
@@ -663,13 +663,19 @@ def daily_room() -> int:
     down rather than discovered later.
 
     Falls CLOSED (returns 0) if the count cannot be read. A cap that fails open
-    is not a cap, and the surface it protects is a public channel."""
+    is not a cap, and the surface it protects is a public channel.
+
+    PER-ARM (2026-09-26): `arms` narrows the count to one arm. The breaker was shared by both published
+    arms, and on Saturday 2026-09-26 the consensus arm alone published 58 (its p95 is 53/day; the live
+    arm's max is 42) — the shared 60 tripped and the PRE-REGISTERED live arm, the /picks product, could
+    publish nothing for the rest of the day. "Live claims first" only holds within one pass. Each arm now
+    has its own DAILY_RUNAWAY_LIMIT: still a fault breaker per arm, never binding on a normal day."""
     try:
         rows = execute_query(
             """SELECT count(*) AS n FROM picks_forward_test
                 WHERE arm = ANY(%s)
                   AND published_at::date = (now() AT TIME ZONE 'utc')::date""",
-            (list(PUBLISHED_ARMS),),
+            (list(arms or PUBLISHED_ARMS),),
         )
         return max(0, DAILY_RUNAWAY_LIMIT - int(rows[0]["n"]))
     except Exception as e:
@@ -1234,7 +1240,7 @@ def main() -> int:
     picks, pool = load_candidates()
     # RULE-V4: re-select against the DB-backed daily allowance. load_candidates()
     # caps per call (correct for offline analysis); the live path must cap per DAY.
-    room = daily_room()
+    room = daily_room(("live",))
     picks = select(pool, room)
     if args.send:
         print(f"board refreshed: {write_board(pool)} legs at/above break-even")

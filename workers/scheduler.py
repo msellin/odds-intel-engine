@@ -2634,16 +2634,17 @@ def job_publish_picks_forward_test():
     # RULE-V4 (2026-09-15): this job now runs every 30 minutes, so the cap has to
     # come from the DB — `select()` caps per CALL, which across 48 calls a day is
     # not a cap at all. Counted on published_at::date in UTC; falls CLOSED.
-    room = daily_room()
+    room = daily_room(("live",))           # per-arm breaker (2026-09-26): consensus volume cannot starve live
     picks = select(pool, room)
 
     # CONSENSUS ARM ([[#068]], 2026-09-22, owner-approved). A SECOND published
     # arm anchored on a de-vigged multi-book consensus instead of single-book
     # Pinnacle. The live arm above is untouched and stays pre-registered.
     #
-    # WHY IT IS HERE AND NOT A SEPARATE JOB: it must share `daily_room()` and
-    # the ledger dedupe, both of which protect the CHANNEL rather than an arm.
-    # Two jobs would each think they had the whole budget.
+    # WHY IT IS HERE AND NOT A SEPARATE JOB: it must share the ledger dedupe, which
+    # protects the CHANNEL rather than an arm. (The runaway breaker was shared too
+    # until 2026-09-26, when the consensus arm's 58 picks tripped it and starved the
+    # pre-registered live arm for the rest of the day — each arm now has its own.)
     #
     # Ordering matters: the live arm claims first, so where both arms want the
     # same (match, market) the PRE-REGISTERED pick is the one that goes out.
@@ -2713,7 +2714,7 @@ def job_publish_picks_forward_test():
     # data faults in front of subscribers.
     c_sent = 0
     # credible_gate: consensus v2 ([[#106]]) — edge >= 3% under Shin, additive AND power.
-    consensus_room = daily_room()
+    consensus_room = daily_room(("consensus_anchor",))
     consensus_picks = select(consensus_pool, consensus_room,
                              max_edge=CONSENSUS_MAX_EDGE, credible_gate=True)
     for c in consensus_picks:

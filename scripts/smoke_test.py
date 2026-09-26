@@ -57348,5 +57348,19 @@ def test_picks_page_gate():
     return "shortlist view + rule; API and records untouched"
 
 
+@test("FORWARD-TEST-BREAKER-PER-ARM — the consensus arm's volume cannot trip the live arm's runaway breaker")
+def test_forward_test_breaker_per_arm():
+    """2026-09-26: the 60/day breaker was shared by the two published arms; the consensus arm published 58
+    on a Saturday, the breaker tripped and the PRE-REGISTERED live arm could publish nothing for the rest of
+    the day (surfaced by PICKS-FORWARD-TEST-SCHEDULED going red on live data). Each arm has its own now."""
+    import inspect
+    import scripts.publish_picks_forward_test as pub
+    assert "arms: tuple | None = None" in inspect.getsource(pub.daily_room)
+    sched = _engine_path("workers/scheduler.py").read_text()
+    assert 'room = daily_room(("live",))' in sched and 'consensus_room = daily_room(("consensus_anchor",))' in sched
+    assert 'room = daily_room(("live",))' in inspect.getsource(pub.main)
+    return "per-arm breaker in the scheduled job and the CLI"
+
+
 if __name__ == "__main__":
     main()
