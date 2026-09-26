@@ -748,6 +748,31 @@ def store_odds(match_id: str, match_data: dict, minutes_to_kickoff: int = None):
                 conn.commit()
 
 
+def after_kickoff(match_id: str, bookmaker: str, minutes_to_kickoff: int | None) -> bool:
+    """#192 (2026-09-26): True when a direct-book PRE-MATCH write would land at/after kickoff.
+
+    odds_snapshots holds pre-match prices for the direct books (in-play quotes live in
+    inplay_book_quotes / book_live_stats). On 09-26 the Coolbet board sweep reused a cached
+    category listing whose events still read OPEN after they had started, fetched their
+    LIVE markets and wrote them as pre-match — 2,715 Coolbet + 5,219 Epicbet rows in 10 days,
+    ~4,100 of them stamped is_closing (the old `abs(mtk) <= 15` window counted post-KO rows as
+    the close), i.e. in-play prices feeding real-bet CLV. Refused here for every direct-book
+    writer: the book's own clock (`minutes_to_kickoff` < 0) OR ours (the fixture has left
+    'scheduled', or its kickoff is > 15 min past — a reschedule inside 15 min keeps its price)."""
+    if minutes_to_kickoff is not None and minutes_to_kickoff < 0:
+        refused = True
+    else:
+        from workers.api_clients.db import execute_query
+        r = execute_query("SELECT (status <> 'scheduled' OR date <= now() - interval '15 minutes') AS gone "
+                          "FROM matches WHERE id = %s", (match_id,))
+        refused = bool(r and r[0]["gone"])
+    if refused:
+        log_ = __import__("logging").getLogger(__name__)
+        log_.warning("after-kickoff guard (#192): refusing %s pre-match write for %s (mtk=%s)",
+                     bookmaker, match_id, minutes_to_kickoff)
+    return refused
+
+
 def store_coolbet_odds_snapshot(
     match_id: str,
     market: str,
@@ -768,7 +793,8 @@ def store_coolbet_odds_snapshot(
     # and a real `is_opening`. This single-row path is what the Coolbet placer
     # writes through, so leaving it on the old +-5 window would have kept
     # Coolbet — the book we place real money at — anchorless.
-    is_closing = minutes_to_kickoff is not None and abs(minutes_to_kickoff) <= 15
+    # #192: the window is PRE-kickoff only (was abs(), which stamped in-play rows as the close).
+    is_closing = minutes_to_kickoff is not None and 0 <= minutes_to_kickoff <= 15
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -810,6 +836,9 @@ def store_book_odds_snapshots(
     """
     from workers.api_clients.db import get_conn
     if not rows:
+        return 0
+    # #192: pre-match table — never a price taken at/after kickoff.
+    if after_kickoff(match_id, bookmaker, minutes_to_kickoff):
         return 0
 
     # 1X2-HOME-AWAY-INVERSIONS. This writer carries Epicbet, Unibet-Site and
@@ -867,7 +896,8 @@ def store_book_odds_snapshots(
     # round trip, and the series key includes `handicap_line` so each AH rung
     # gets its own opening — matching how the pruner partitions series. The
     # NOT EXISTS rides the (match_id, market, timestamp) index.
-    is_closing = minutes_to_kickoff is not None and abs(minutes_to_kickoff) <= 15
+    # #192: PRE-kickoff only — abs() stamped post-KO (in-play) rows as the close.
+    is_closing = minutes_to_kickoff is not None and 0 <= minutes_to_kickoff <= 15
     payload = [
         (match_id, bookmaker, market, selection, odds, now,
          is_closing, minutes_to_kickoff, line,

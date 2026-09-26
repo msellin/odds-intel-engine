@@ -36421,10 +36421,11 @@ def test_direct_book_anchors():
 
     for fn_name in ("store_book_odds_snapshots", "store_coolbet_odds_snapshot"):
         fn_src = inspect.getsource(getattr(sc, fn_name))
-        assert "abs(minutes_to_kickoff) <= 15" in fn_src, (
-            f"{fn_name} must use the house +-15 minute closing window (the one "
-            "fetch_odds.py uses). At +-5 a 30-minute sweep cadence almost never "
-            "lands inside it, which is why our own books had ~0 anchors."
+        assert "0 <= minutes_to_kickoff <= 15" in fn_src, (
+            f"{fn_name} must use the 15-minute PRE-kickoff closing window. At 5 a "
+            "30-minute sweep cadence almost never lands inside it, which is why our own "
+            "books had ~0 anchors; and #192 (2026-09-26) made it pre-KO only — the old "
+            "abs() stamped in-play rows as the close."
         )
         assert "is_opening" in fn_src and "NOT EXISTS" in fn_src, (
             f"{fn_name} must compute is_opening in the INSERT; it defaulted to "
@@ -49861,6 +49862,29 @@ def test_coolbet_event_map_from_run_bulk():
         "run_bulk must persist its fixture -> Coolbet event pairings")
     assert "mapped.append(" in src and "not dry_run" in src, (
         "pairings must be collected per matched fixture and never written on a dry run")
+
+@test("DIRECT-BOOK-NO-POST-KICKOFF-WRITES — the pre-match table never takes an in-play price (#192)")
+def test_direct_book_no_post_kickoff_writes():
+    """#192 (2026-09-26). The Coolbet board sweep reused a cached listing (#142) whose events
+    still read OPEN after kickoff and wrote their LIVE markets as pre-match; the writers'
+    abs(mtk) <= 15 closing window then stamped ~4,100 of them as the CLOSE. Pins: (1) both
+    direct-book writers refuse via after_kickoff(); (2) the closing window is pre-KO only;
+    (3) the sweep judges "started" by the clock, not the cached status; (4) after_kickoff
+    refuses a negative book clock without a DB round trip."""
+    import inspect
+    from workers.api_clients import supabase_client as sc
+    from workers.automation import coolbet_explorer as ce
+    assert "after_kickoff(match_id, bookmaker, minutes_to_kickoff)" in inspect.getsource(sc.store_book_odds_snapshots)
+    assert 'after_kickoff(match_id, "Coolbet", minutes_to_ko)' in inspect.getsource(ce.store_coolbet_snapshots_for_match)
+    for fn in (sc.store_book_odds_snapshots, sc.store_coolbet_odds_snapshot):
+        src = inspect.getsource(fn)
+        assert "abs(minutes_to_kickoff)" not in src and "0 <= minutes_to_kickoff <= 15" in src
+    sweep = inspect.getsource(ce.run_board_sweep)
+    assert "cb_start <= datetime.now(timezone.utc)" in sweep and "started_skipped" in sweep
+    orig = sc.after_kickoff.__globals__.get("execute_query")
+    assert sc.after_kickoff("00000000-0000-0000-0000-000000000000", "Coolbet", -7) is True
+    return "writers guarded, pre-KO closing window, sweep clock check"
+
 
 @test("OPTIBET-SWEEPER — market mapping by type+title, squad naming, shared guards, scheduled collection-only")
 def test_optibet_sweeper():

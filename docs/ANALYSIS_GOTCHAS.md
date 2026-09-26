@@ -1180,7 +1180,7 @@ source:
 | feed | post-KO share |
 |---|---|
 | every AF-fed book (Superbet, SBO, Unibet, Betano, Pinnacle, Bet365, …) | **30–40%** |
-| Coolbet, Unibet-Kambi, Epicbet (direct scrapes) | **0.0%** |
+| Coolbet, Unibet-Kambi, Epicbet (direct scrapes) | **0.0%** — ⚠️ NOT true 2026-09-02…09-26: ~19k post-KO direct-book rows (Epicbet from 09-02, Coolbet in-play boards from 09-26 12:00 UTC via a reused listing), many stamped `is_closing` by the old `abs(mtk)<=15` window. Quarantined by migration 481 and refused at write time since #192 (`supabase_client.after_kickoff`). Keep the `timestamp <= m.date` bound anyway. |
 
 Flat across markets (28.6–36.1%), and not near-kickoff rounding: median post-KO
 row is **165 minutes** past kickoff, and 1.91M rows are >3h past.

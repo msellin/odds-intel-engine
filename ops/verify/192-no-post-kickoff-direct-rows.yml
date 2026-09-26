@@ -1,0 +1,18 @@
+# [[#192]] After migration 481 + the after_kickoff writer guard: no direct-book pre-match row
+# is written after kickoff any more. Invariant for two weeks.
+task: "#192"
+checks:
+  - name: no_post_kickoff_direct_book_rows
+    mode: invariant
+    sql: "SELECT count(*) FROM odds_snapshots o JOIN matches m ON m.id = o.match_id WHERE o.bookmaker IN ('Coolbet','Epicbet','Tonybet','Unibet-Site','Optibet') AND o.timestamp > now() - interval '6 hours' AND (o.minutes_to_kickoff < 0 OR o.timestamp > m.date + interval '15 minutes')"
+    expect: "== 0"
+    run_after:
+      time: 2026-09-26T23:30:00Z
+    expires: "2026-10-10T00:00:00Z"
+  - name: migration_481_moved_rows
+    mode: now
+    sql: "SELECT count(*) FROM odds_snapshots_quarantined WHERE quarantine_reason LIKE '#192%'"
+    expect: ">= 18000"
+    run_after:
+      time: 2026-09-26T22:30:00Z
+    expires: "2026-09-27T12:00:00Z"

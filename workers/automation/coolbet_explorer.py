@@ -1480,6 +1480,11 @@ def store_coolbet_snapshots_for_match(
     stored = 0
     by_market: dict[str, int] = {}
     minutes_to_ko = _minutes_to_kickoff(kickoff_iso)
+    # #192: this is the pre-match table — refuse a board whose fixture has already kicked off.
+    if not dry_run:
+        from workers.api_clients.supabase_client import after_kickoff
+        if after_kickoff(match_id, "Coolbet", minutes_to_ko):
+            return 0, 0, {}
 
     ou_buffer: list[tuple[str, str, float, float | None]] = []  # (market, sel, odds, line)
     non_ou_rows: list[tuple[str, str, float, float | None]] = []
@@ -2320,6 +2325,12 @@ def run_board_sweep(
             cb_start = _parse_iso_start(ev.get("start"))
             # near-term filter: skip games AF cannot have a fixture for yet
             if cb_start is not None and cb_start > horizon:
+                continue
+            # #192 (2026-09-26): a REUSED listing (LISTING-REUSE / PASS-PACING, #142) still says
+            # OPEN for an event that has since kicked off — its markets are then LIVE prices.
+            # Judge "started" by the clock, not the cached status.
+            if cb_start is not None and cb_start <= datetime.now(timezone.utc):
+                c["started_skipped"] = c.get("started_skipped", 0) + 1
                 continue
             c["near_term"] += 1
             cat_near_term += 1

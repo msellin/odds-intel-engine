@@ -47,8 +47,10 @@ Every row goes through the shared writer (`store_book_odds_snapshots`), i.e. the
 check, board_guard.screen_board (wrong-fixture boards) and mirror_guard (inverted 1X2), plus
 the per-book monotone-ladder guards Tonybet uses. Pairings go to `book_event_map`.
 Not collected (not offered pre-match on the boards sampled 2026-09-26): cards/bookings.
-Also on the board and not parsed yet: 3-way handicap, correct score, HT/FT, combos,
-player props — all kept in the raw archive.
+Also on the board and NOT requested (so NOT in the raw archive either — the archive holds only
+the BOARD_GAME_TYPES responses; corrected 2026-09-26): 3-way handicap, correct score, HT/FT,
+combos, player props. The listing call also carries live/ended events with score, per-half
+goals and per-team corners/cards/shots (`scoreboard.extraStats`) — skipped today (#101).
 """
 from __future__ import annotations
 
