@@ -56995,5 +56995,24 @@ def test_ci_smoke_fast_and_matching():
     return "3.14; MFV / AF-ISLIVE / LEAKAGE-CANARY single-query"
 
 
+@test("SHARP-INDEPENDENT-CLOSE — sharp bots are judged on a close that excludes Pinnacle AND the own book (#150)")
+def test_sharp_independent_close():
+    """[[#150]]: a Pinnacle-triggered bot graded on Pinnacle's close scores its own trigger edge when
+    Pinnacle does not move; graded on its own book's close it scores -margin. clv_cons is the
+    independent judge only while Pinnacle stays OUT of the consensus input and the own book is
+    excluded — pinned here, plus the pre-registered analysis' fixed design."""
+    import inspect
+    from workers.jobs import clv_sharp
+    src = inspect.getsource(clv_sharp.run)
+    split = src[src.index('if s["bk"] == "Pinnacle":'):src.index("cons_cache: dict = {}")]
+    assert "q[(s[\"mid\"], s[\"market\"])]" in split and "else:" in split and "allbooks[" in split, \
+        "Pinnacle quotes must go to the Pinnacle close only, never into the consensus input"
+    assert 'exclude_book=l.get("bk")' in src, "the leg's own book must be excluded from its consensus close"
+    a = _engine_path("scripts/analysis/sharp_trigger_independent_clv.py").read_text()
+    for pin in ("N_MIN = 50", "B = 10_000", "SEED = 150", 'r["cons_status"] == "ok"', "def holm(", "PRE-REGISTRATION"):
+        assert pin in a, pin
+    return "Pinnacle out of the consensus input, own book excluded, analysis design fixed"
+
+
 if __name__ == "__main__":
     main()
