@@ -126,6 +126,33 @@ def pin_fair(pin: pd.DataFrame) -> pd.DataFrame:
     return w
 
 
+def fitted_fair(fair: pd.DataFrame, runs: pd.DataFrame) -> pd.DataFrame:
+    """TWIN — LADDER FIT (prereg): for every Pinnacle fetch whose quoted rungs fit ONE Skellam goal-difference
+    distribution (workers/model/ah_ladder.fit_grid, max resid 0.03), a fair row for each rung a book quotes on
+    that match that Pinnacle did NOT quote in the fetch. `fitted` = True marks them."""
+    import os
+    import sys as _sys
+    _sys.path.insert(0, os.getcwd())
+    from workers.model.ah_ladder import fit_grid, grid_q
+    book_lines = runs[runs.bookmaker != "Pinnacle"].groupby("match_id").line.agg(lambda x: set(x.round(2)))
+    rows = []
+    for (mid, ts), g in fair.groupby(["match_id", "ts"], sort=False):
+        quoted = dict(zip(g.line.round(2), g.q_home))
+        want = book_lines.get(mid, set()) - set(quoted)
+        if not want:
+            continue
+        f = fit_grid(quoted)
+        if f is None:
+            continue
+        for L in want:
+            qh = grid_q(f, L, "home")
+            if qh is not None:
+                rows.append((mid, ts, L, qh, 1.0 - qh))
+    out = pd.DataFrame(rows, columns=["match_id", "ts", "line", "q_home", "q_away"])
+    out["fitted"] = True
+    return out
+
+
 def book_close(runs: pd.DataFrame, m: pd.DataFrame) -> pd.DataFrame:
     """Each book's last pre-kickoff quote per (match, line, side) seen within CLOSE_WINDOW_MIN of kickoff,
     both sides present, power de-vigged → q_home/q_away per (match, book, line)."""
@@ -150,7 +177,7 @@ def candidates(runs: pd.DataFrame, fair: pd.DataFrame, m: pd.DataFrame) -> pd.Da
         f = fair[fair.match_id.isin(chunk)]
         b = books[books.match_id.isin(chunk)]
         for side in ("home", "away"):
-            fs = f[["match_id", "ts", "line", "kickoff", f"q_{side}"]].rename(columns={f"q_{side}": "q"})
+            fs = f[["match_id", "ts", "line", "kickoff", "fitted", f"q_{side}"]].rename(columns={f"q_{side}": "q"})
             bs = b[b.selection == side][["match_id", "line", "bookmaker", "odds", "first_ts", "last_ts"]]
             x = fs.merge(bs, on=["match_id", "line"])
             x = x[(x.first_ts <= x.ts) & (x.ts <= x.last_ts)]
@@ -249,6 +276,7 @@ def main() -> int:
     ap.add_argument("--phase", choices=["discovery", "holdout"])
     ap.add_argument("--cells", default="")
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--variant", choices=["base", "ladderfit", "consistency"], default="base")
     a = ap.parse_args()
     selftest()
     if a.selftest:
@@ -259,21 +287,56 @@ def main() -> int:
     runs, pin = runs[runs.match_id.isin(m.match_id)], pin[pin.match_id.isin(m.match_id)]
     fair = pin_fair(pin)
     close = book_close(runs, m)
+    pin_close = fair.copy()                    # Pinnacle close = QUOTED rungs only, never a fitted one
+    fair["fitted"] = False
+    if a.variant == "ladderfit":
+        ff = fitted_fair(fair[fair.ts <= fair.ts.max()], runs)
+        print(f"ladder fit: {len(ff)} fitted rung-fetch rows")
+        fair = pd.concat([fair, ff], ignore_index=True)
     c = candidates(runs, fair, m)
     c = ladder_guard(c, runs[runs.bookmaker != "Pinnacle"])
     print(f"ladder guard: {len(c)} candidates, checked {c.ladder_checked.mean():.0%}, "
           f"dropped {(~c.ladder_ok).sum()} ({(~c.ladder_ok).mean():.0%}); by book dropped:",
           c[~c.ladder_ok].bookmaker.value_counts().to_dict())
     c = c[c.ladder_ok]
-    p = score(picks_from(c), close, fair, m)
+    p = score(picks_from(c), close, pin_close, m)
     rng = np.random.default_rng(SEED)
     # AMENDMENT 1: two variants — every pick, and CONFIRMED picks (picked from confirmed candidates only)
-    pc = score(picks_from(c[c.confirmed]), close, fair, m)
+    pc = score(picks_from(c[c.confirmed]), close, pin_close, m)
     p["variant"], pc["variant"] = "any", "confirmed"
     p = pd.concat([p, pc], ignore_index=True)
     pooled = summarise(p, ["variant"], rng)
     cells = summarise(p, ["variant", "line_type", "band", "timing"], rng)
-    p.to_parquet(f"{D}/picks_{a.phase}.parquet")
+    p.to_parquet(f"{D}/picks_{a.phase}{'' if a.variant == 'base' else '_' + a.variant}.parquet")
+    if a.variant == "ladderfit":
+        # PRIMARY (prereg TWIN): the FITTED-RUNG picks on independent-close CLV
+        pa = p[p.variant == "any"].copy()
+        pa["rung"] = np.where(pa.fitted.astype(bool), "fitted", "quoted")
+        print("\nTWIN — LADDER FIT, by rung source (any variant):\n",
+              summarise(pa, ["rung"], rng).round(4)[["cell", "n", "n_ind", "clv_ind", "p_ind", "clv_pin", "roi", "roi_lo", "roi_hi", "ev"]].to_string(index=False))
+        if (pa.rung == "fitted").any():
+            print("\nfitted picks by timing:\n", summarise(pa[pa.rung == "fitted"], ["timing"], rng).round(4)[["cell", "n", "n_ind", "clv_ind", "p_ind", "roi"]].to_string(index=False))
+    if a.variant == "consistency":
+        # PINNACLE-CONSISTENCY SPLIT (prereg): fit status of Pinnacle's quoted rungs at each pick's decision fetch
+        import os
+        import sys as _sys
+        _sys.path.insert(0, os.getcwd())
+        from workers.model.ah_ladder import fit_grid
+        pa = p[p.variant == "any"].copy()
+        stat = []
+        for mid, ts in zip(pa.match_id, pa.ts):
+            g = fair[(fair.match_id == mid) & (fair.ts == ts)]
+            rungs = dict(zip(g.line.round(2), g.q_home))
+            stat.append("unfittable" if len(rungs) < 2 else ("consistent" if fit_grid(rungs) else "inconsistent"))
+        pa["pin_fit"] = stat
+        print("\nPINNACLE-CONSISTENCY SPLIT:\n", summarise(pa, ["pin_fit"], rng).round(4)[["cell", "n", "n_ind", "clv_ind", "p_ind", "roi", "roi_lo", "roi_hi", "ev"]].to_string(index=False))
+        cc = pa[(pa.pin_fit == "consistent")].clv_ind.dropna().values
+        ci = pa[(pa.pin_fit == "inconsistent")].clv_ind.dropna().values
+        if len(cc) >= 2 and len(ci) >= 2:
+            diffs = rng.choice(cc, (B, len(cc))).mean(1) - rng.choice(ci, (B, len(ci))).mean(1)
+            print(f"consistent - inconsistent = {cc.mean() - ci.mean():+.4f}  one-sided p = {(diffs <= 0).mean():.4f}  (n {len(cc)} / {len(ci)})")
+        else:
+            print(f"consistent - inconsistent: too few legs (n {len(cc)} / {len(ci)})")
     pd.set_option("display.width", 200)
     print(f"\n{a.phase}: matches {m.match_id.nunique()}  candidates {len(c)}  picks (any/confirmed) "
           f"{(p.variant == 'any').sum()}/{(p.variant == 'confirmed').sum()}  with independent close "

@@ -137,3 +137,12 @@ Pinnacle's error rather than the soft book's, so those picks should have LOWER i
 **Only if both pass** does the filter "require a consistent Pinnacle ladder" ship — as a twin bot, never by
 changing `bot_ah_sharp_v1`. Expected: most picks are `consistent`; a small `inconsistent` group with lower CLV,
 too few to pass (the likeliest outcome is n too small).
+
+### PINNACLE-CONSISTENCY SPLIT: RESULT (2026-09-26) — NOT TESTABLE, nothing shipped
+356 of 362 discovery picks and 241 of 249 on 09-01 → 09-25 were made at a fetch where Pinnacle quoted only ONE
+rung (median rungs per Pinnacle fetch = 2; early fetches usually carry just the main line — the full ladder
+arrives near kickoff), so their consistency cannot be judged: consistent 3 / 5, inconsistent 3 / 3 legs. The
+difference (+7.8 pp, p 0.30, n 3 / 3) is noise. `bot_ah_sharp_v1` unchanged.
+
+**What both tests say together:** the edge the bot takes lives on Pinnacle's MAIN line, usually early, when
+Pinnacle shows only that one rung — soft books do not misprice the other rungs relative to it.
