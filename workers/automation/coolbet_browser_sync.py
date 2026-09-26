@@ -2107,14 +2107,22 @@ def match_coolbet_to_simulated(norm_bet: dict, simulated_bets: list[dict]) -> di
 
     best = None
     best_score = 0
+    # [[#162]] review 2026-09-26: compare the CANONICAL (market, selection). The ticket maps to the
+    # legacy 'o/u' + 'over 2.5', while shadow picks are stored 'over_under_25' + 'over', so an O/U bet
+    # already on the account never matched a shadow pick and blocked nothing — in the UI placer's
+    # per-pick account check, the router's, and the reconcile. Asian handicap keeps the loose
+    # starts-with (its line lives in the selection and may be spelled differently).
+    from workers.canonical_market import canonicalize_for_storage as _canon
+    tk = _canon(market_key, (selection_key or "").lower())
     for sb in simulated_bets:
-        if sb.get("market") != market_key:
-            continue
-        # Selection comparison: for AH the selection includes a handicap
-        # number that may not match exactly. Loose-equal: starts-with.
         sb_sel = (sb.get("selection") or "").lower()
         sk_lower = (selection_key or "").lower()
-        if not (sb_sel.startswith(sk_lower.split()[0]) or sk_lower.startswith(sb_sel.split()[0])):
+        if market_key == "asian_handicap" or sb.get("market") == "asian_handicap":
+            if sb.get("market") != market_key:
+                continue
+            if not (sb_sel.startswith(sk_lower.split()[0]) or sk_lower.startswith(sb_sel.split()[0])):
+                continue
+        elif _canon(sb.get("market"), sb_sel) != tk:
             continue
         home_score = fuzz.token_set_ratio(cb_home.lower(), (sb.get("home_team") or "").lower())
         away_score = fuzz.token_set_ratio(cb_away.lower(), (sb.get("away_team") or "").lower())

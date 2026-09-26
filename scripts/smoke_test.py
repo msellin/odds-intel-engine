@@ -56608,5 +56608,20 @@ def test_pick_sender_fails_closed():
     finally:
         db.execute_query, ps._deliver, ps._record, ps._finalise, ps._unconfigured = o
 
+@test("ACCOUNT-MATCHER-CANONICAL-OU — an O/U bet on the Coolbet account blocks the shadow pick for it (#162 review)")
+def test_account_matcher_canonical_ou():
+    """The account matcher mapped a ticket to the legacy 'o/u' + 'over 2.5' while shadow picks are stored
+    'over_under_25' + 'over', so an O/U bet already on the account never matched — the UI placer's and
+    the router's per-pick account checks and the reconcile all missed it. BEHAVIOURAL."""
+    from workers.automation.coolbet_browser_sync import match_coolbet_to_simulated as m
+    t = {"match_name": "Arsenal - Chelsea", "market": "Väravate arv", "selection": "Üle 2.5"}
+    row = lambda mk, sel: [{"market": mk, "selection": sel, "home_team": "Arsenal", "away_team": "Chelsea"}]
+    assert m(t, row("over_under_25", "over")), "shadow vocabulary must match"
+    assert m(t, row("o/u", "over 2.5")), "legacy vocabulary must still match"
+    assert m(t, row("over_under_35", "over")) is None, "a different line is a different bet"
+    assert m(t, row("over_under_25", "under")) is None, "the other side is a different bet"
+    t1 = {"match_name": "Arsenal - Chelsea", "market": "Match Result", "selection": "Arsenal"}
+    assert m(t1, row("1x2", "home")) and m(t1, row("1x2", "away")) is None
+
 if __name__ == "__main__":
     main()
