@@ -3318,3 +3318,15 @@ Forward, 30 days, same scorecard as /admin/models: AF 1X2 log-loss **1.527 vs 1.
 0.935 vs Pinnacle 0.922 on the same 252 matches — a candidate fair price where Pinnacle is missing, not yet
 pre-registered (#154 idea 3). Tonybet's own price is NEVER above its own fair (0 of ~14,000, margin 8–12%).
 Evidence: `docs/AF_PREDICTIONS_TONYBET_FAIR_2026_09_26.md`.
+## 88. A "fresh" AF-Pinnacle quote is usually a ~2-hour-old line — fetch time is not liveness ([[#186]], 2026-09-26)
+
+We re-fetch API-Football's Pinnacle every 30 min and stamp each row with OUR fetch time, so every freshness rule
+(`PIN_MAX_AGE_MIN = 60`, "close within 60 min of kick-off") passes. But the VALUE AF serves last changed a median
+**120 min** before kick-off and moved in the final hour on only **14%** of matches (#186, 2,624 matches). Where the
+real market moves late (small leagues, youth/reserve/cup football), the "Pinnacle close" is stale: the Estonian books
+and our own Betfair Exchange reader had already moved (exchange sided with the locals 17/17), and betting the AF price
+"against" the locals showed +25% ROI that existed only on quotes AF had not refreshed (−3.4% where it had).
+**Rules:** (1) never treat a local-vs-AF split as value — it means the anchor is stale (the #182 market-split guard);
+(2) when judging a close, ask when its value last CHANGED, not when we fetched it; (3) the exchange is the only live
+sharp price we hold. Open work: [[#188]].
+
