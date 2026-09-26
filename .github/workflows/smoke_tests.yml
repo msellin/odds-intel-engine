@@ -97,9 +97,12 @@ jobs:
           test -f "$(dirname "$GITHUB_WORKSPACE")/odds-intel-web/src/lib/engine-data.ts" \
             || { echo "::error::frontend checkout is not where the tests look"; exit 1; }
 
+      # CI-PYTHON-MATCHES-VPS-2026-09-26: was 3.12 while the VPS and every dev Mac run 3.14 —
+      # CI resolved different wheels than production (the pandas 3.0.4 segfault, #145, is
+      # Linux+3.14-specific and invisible elsewhere). Test on what we run.
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
           cache: 'pip'
 
       - name: Install dependencies

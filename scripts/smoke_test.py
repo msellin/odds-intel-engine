@@ -311,11 +311,24 @@ def _():
 
 @test("MFV-LIVE-BUILD — build_match_feature_vectors_live runs and returns int")
 def _():
-    from workers.api_clients.supabase_client import build_match_feature_vectors_live
+    # CI-SMOKE-LONG-POLE-2026-09-26 ([[#168]] h): this built MFV rows for EVERY fixture today —
+    # 15 s on the Mac but 239 s from a GitHub runner through the SSH tunnel, i.e. the entire
+    # critical path of the suite (254 s). The live wrapper is one SELECT + the shared builder, so
+    # exercise the wrapper on an empty date and the shared builder on 3 real fixtures: same code,
+    # same upsert, a fraction of the round trips.
+    from workers.api_clients import supabase_client as sc
+    assert sc.build_match_feature_vectors_live(None, "2000-01-01") == 0
     today_str = date.today().isoformat()
+    few = sc.execute_query(
+        """SELECT id, date, result, score_home, score_away, home_team_id, away_team_id, league_id,
+                  pseudo_clv_home, pseudo_clv_draw, pseudo_clv_away, lineups_fetched_at
+             FROM matches WHERE status != 'finished' AND date >= %s AND date <= %s
+            ORDER BY date LIMIT 3""",
+        (f"{today_str}T00:00:00", f"{today_str}T23:59:59"))
     # May be 0 (no scheduled fixtures today) — no-op is fine, exception is not.
-    count = build_match_feature_vectors_live(None, today_str)
+    count = sc._build_mfv_rows_for_matches(few, today_str) if few else 0
     assert isinstance(count, int), f"Expected int, got {type(count)}"
+    return f"shared builder on {len(few)} fixture(s) -> {count} row(s)"
 
 
 @test("MFV-LIVE-BUILD — live builder selects non-finished matches (status guard)")
@@ -15632,8 +15645,10 @@ def test_user_tele_notify():
 
     # daily_pipeline_v2 wires user notifications
     pipeline_src = (root / "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
-    assert "send_telegram_to_users" in pipeline_src, \
-        "daily_pipeline_v2.py must call send_telegram_to_users for user bet alerts"
+    # #148 (2026-09-24): users get ONLY the VIP bot's pick, via the audited VIP sender
+    # (#162 W5.3) — the per-bot send_telegram_to_users broadcast was removed.
+    assert "send_vip_pick" in pipeline_src, \
+        "daily_pipeline_v2.py must reach users through pick_sender.send_vip_pick"
 
     # #162 W7.2 (2026-09-26): inplay_bot.py (the second user-notification site) is deleted.
 
@@ -16319,9 +16334,14 @@ def test_tele_dedup_multi_bot():
     # Must show bot count and list bots
     assert "+{_n-1} more" in src, "must show +N more for multi-bot agreement"
     assert '", ".join(_tb["bots"])' in src, "must list all bots when N > 1"
-    # User alert must be deduped per position not per bet_id
-    assert 'dedup_key=f"user-bet-{_tk[0]}-{_tk[1]}-{_tk[2]}"' in src, \
-        "user alert dedup_key must be match+market+selection, not bet_id"
+    # User DMs: since #148 users get ONLY the VIP bot's pick, sent once per consolidated position
+    # through the ONE audited sender (#162 W5.3), whose pick_sends (channel, pick_table, pick_id)
+    # unique key is the dedupe. The old per-position `user-bet-…` telegram dedup_key is gone
+    # with the per-bot user broadcast.
+    loop = src[src.index("for _tk, _tb in _tele_bets.items():"):]
+    loop = loop[:loop.index("\n    for ", 10) if "\n    for " in loop[10:] else len(loop)]
+    assert "send_vip_pick" in loop, "users' pick must go through the audited VIP sender"
+    assert "send_telegram_to_users(" not in loop, "the per-bot user broadcast must not come back"
     # Per-bet immediate send_telegram calls must be gone
     assert 'f"🎯 <b>PRE-MATCH</b> {bot_name}' not in src, \
         "old per-bot immediate send_telegram must be removed"
@@ -24635,10 +24655,16 @@ def test_shin_devig_2026_08_26():
         "OU line-shop still uses the old proportional de-vig"
     assert "true_prob = (1.0 / pin_odds) / overround" not in src, \
         "1X2 line-shop still uses the old proportional de-vig"
-    for live in ("workers/jobs/pick_triggers.py", "workers/automation/pick_generator.py"):
-        assert "from workers.model.devig import devig" in pathlib.Path(live).read_text(), \
-            f"{live} must de-vig with the shared Shin helper"
-    return "Shin de-vig wired into the live sharp sites; longshot correction verified"
+    # #162 W7.6 (2026-09-26): ONE sharp engine decides for every sharp bot, so the live de-vig
+    # site is workers/automation/sharp_engine.py via devig.fair_prob (Shin 3-way, power 2-way).
+    # pick_triggers / pick_generator delegate to it and must not grow a private de-vig again.
+    eng = pathlib.Path("workers/automation/sharp_engine.py").read_text()
+    assert "from workers.model.devig import fair_prob" in eng, "sharp engine must de-vig with the shared helper"
+    for dele in ("workers/jobs/pick_triggers.py", "workers/automation/pick_generator.py"):
+        t = pathlib.Path(dele).read_text()
+        assert "sharp_engine" in t, f"{dele} must delegate sharp decisions to the ONE sharp engine"
+        assert "/ total_implied" not in t and "/ overround" not in t, f"{dele} grew a private proportional de-vig"
+    return "Shin/power de-vig via the one sharp engine; longshot correction verified"
 
 
 @test("SHADOW-CLV-BOOKMAKER")
@@ -30618,11 +30644,14 @@ def test_islive_callsites_bounded():
     # Guard: the predicate must actually discriminate on live data, or this test
     # is pinning something inert.
     from workers.api_clients.db import execute_query
+    # CI-SMOKE-LONG-POLE-2026-09-26: was count(*) over every odds row of 2 days (109 s from CI);
+    # only existence is asserted, so ask for existence.
     r = execute_query(
-        """SELECT count(*) n,
-                  sum(CASE WHEN o.timestamp > m.date THEN 1 ELSE 0 END) post_ko
-             FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
-            WHERE o.timestamp > now() - interval '2 days'"""
+        """SELECT EXISTS (SELECT 1 FROM odds_snapshots o
+                           WHERE o.timestamp > now() - interval '2 days')::int AS n,
+                  EXISTS (SELECT 1 FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
+                           WHERE o.timestamp > now() - interval '2 days'
+                             AND o.timestamp > m.date)::int AS post_ko"""
     )[0]
     assert r["n"] > 0 and r["post_ko"] > 0, (
         "no post-kickoff rows exist in the recent window — this test cannot "
@@ -39268,21 +39297,25 @@ def test_leakage_canary():
                                 'smallint','bigint')""")]
 
     scores, market_best = {}, 0.0
-    for col in cols:
-        if col in LABEL_COLS:
+    # CI-SMOKE-LONG-POLE-2026-09-26: was ONE query per column (~100 scans of 90 days, 107 s from
+    # CI). One scan now: count(col) = rows where col IS NOT NULL (the old per-column filter) and
+    # corr() already skips rows where either side is NULL, so every (n, c) is identical.
+    feats = [c for c in cols if c not in LABEL_COLS]
+    assert all(len(c) <= 60 for c in feats), "alias n__/c__ + name would pass Postgres' 63-char limit"
+    sel = ",\n".join(
+        f'count(mfv."{c}") AS "n__{c}", corr(mfv."{c}"::float, hw) AS "c__{c}"' for c in feats)
+    one = execute_query(
+        f"""SELECT {sel}
+              FROM match_feature_vectors mfv
+              JOIN matches m ON m.id = mfv.match_id
+             CROSS JOIN LATERAL (SELECT CASE WHEN m.score_home > m.score_away THEN 1.0 ELSE 0.0 END AS hw) h
+             WHERE m.status = 'finished' AND m.score_home IS NOT NULL
+               AND m.date >= NOW() - INTERVAL '90 days'""")[0] if feats else {}
+    for col in feats:
+        n_, c_ = one.get(f"n__{col}"), one.get(f"c__{col}")
+        if not n_ or n_ < 2000 or c_ is None:
             continue
-        rows = execute_query(
-            f"""SELECT count(*) AS n,
-                       corr(mfv."{col}"::float,
-                            CASE WHEN m.score_home > m.score_away THEN 1.0 ELSE 0.0 END) AS c
-                  FROM match_feature_vectors mfv
-                  JOIN matches m ON m.id = mfv.match_id
-                 WHERE m.status = 'finished' AND m.score_home IS NOT NULL
-                   AND m.date >= NOW() - INTERVAL '90 days'
-                   AND mfv."{col}" IS NOT NULL""")
-        if not rows or not rows[0]["n"] or rows[0]["n"] < 2000 or rows[0]["c"] is None:
-            continue
-        v = abs(float(rows[0]["c"]))
+        v = abs(float(c_))
         if any(tok in col for tok in MARKET_DERIVED):
             market_best = max(market_best, v)
         else:
@@ -55126,7 +55159,8 @@ def test_perf_detail_open_one_row_rule():
     assert "const clickable = true;" in lb and "onClick={() => setSelected(bot)}" in lb
     assert "/api/performance/bot-legs?bot=" in lb
     assert "underperforming" not in lb.lower() and "b.roi < 0" not in lb, "no ROI-based group"
-    for g in ('live: "Calibrated & beta', 'testing: "Testing', 'vip: "VIP', 'developing: "In development'):
+    # [[#175]] (2026-09-26): BETA + CALIBRATED merged into ONE status, ACTIVE — the 'live' group label followed.
+    for g in ('live: "Active', 'testing: "Testing', 'vip: "VIP', 'developing: "In development'):
         assert g in lb, g
     assert 'if (!b.hasEnoughData) return "developing";' in lb
     assert "Click any row for its chart and every pick" in lb and "Pro unlocks" not in lb
@@ -56943,6 +56977,22 @@ def test_coolbet_model_price_guard():
     names = {c.bot_name for c in cfgs if c.prob_source != "sharp_devig"}
     assert {"bot_coolbet_1x2_model_v1", "bot_coolbet_ou_model_v1", "bot_unified_gate_1x2_paper_v1"} <= names, names
     return "O/U 1.15x, 1x2/BTTS/DC 1.25x, no path skips it"
+
+
+@test("CI-SMOKE-FAST-AND-MATCHING — CI tests on the VPS's Python; the long-pole tests stay single-query (#168 h)")
+def test_ci_smoke_fast_and_matching():
+    """[[#168]] (h), 2026-09-26: the gate ran 254 s with 32 of 40 runs cancelled by the next push
+    before finishing. The critical path was three DB-chatty tests over the GitHub->VPS tunnel:
+    MFV-LIVE-BUILD 239 s (every fixture today), AF-ISLIVE-CALLSITE-FIXES 109 s (count(*) of 2 days
+    of odds to test existence), LEAKAGE-CANARY 107 s (one scan per feature column). Each now does
+    the same check in one cheap round trip. And CI ran Python 3.12 against a 3.14 production."""
+    wf = _engine_path(".github/workflows/smoke_tests.yml").read_text()
+    assert "python-version: '3.14'" in wf, "CI must test on the Python the VPS runs"
+    src = _engine_path("scripts/smoke_test.py").read_text()
+    assert "sc._build_mfv_rows_for_matches(few, today_str)" in src and "ORDER BY date LIMIT 3" in src
+    assert "count(*) n,\n                  sum(CASE WHEN o.timestamp > m.date" not in src
+    assert "for col in cols:\n        if col in LABEL_COLS:\n            continue\n        rows = execute_query(" not in src
+    return "3.14; MFV / AF-ISLIVE / LEAKAGE-CANARY single-query"
 
 
 if __name__ == "__main__":

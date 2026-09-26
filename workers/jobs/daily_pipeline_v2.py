@@ -41,7 +41,7 @@ from workers.api_clients.supabase_client import (
     batch_write_morning_signals,
     build_match_feature_vectors_live,
 )
-from workers.notify.telegram import send_telegram, send_telegram_to_users
+from workers.notify.telegram import send_telegram
 from workers.utils.odds_quality import NON_OFFER_BOOKS  # the ONE deny-list (#162 A-R12)
 from workers.model.improvements import (
     calibrate_prob, compute_odds_movement, compute_alignment,
@@ -4552,9 +4552,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         # helper so this path and the signaler cannot drift apart.
         #
         # When it is off there is no message to edit, so `_rec_alert` below is
-        # skipped naturally (_msg_id is None). The USER broadcast
-        # (send_telegram_to_users, just below) is a different audience and is
-        # NOT affected.
+        # skipped naturally (_msg_id is None). Users are a different audience:
+        # since #148 they get only the VIP pick, via send_vip_pick just below.
         from workers.notify.telegram import operator_pick_alerts_enabled as _op_alerts
         _msg_id = (send_telegram(_alert_text, reply_markup=_markup)
                    if _op_alerts() else None)
