@@ -14,7 +14,7 @@ Status as of 2026-09-25 evening (the bots session closed everything else it owne
 |---|---|---|
 | [[#152]] `bot_v10_ou_comb_v1` generating picks | the live O/U comparison bot for `ou_comb_v1` | ✅ resolved 2026-09-26 — 0 picks at first refresh was by design (Pinnacle-required + implied-sum gates); first picks landed from 2026-09-25 16:05 |
 | [[#162]] bot refactor phase 3 (other session) | it rewrites the bot object / `BOTS_CONFIG` / the pipeline's shadow passes. RESEARCH and backtests for #154 can start any time, but SHIPPING a twin bot (config + migration + registry) must wait for #162's pipeline changes to land, or be agreed with that session first | 🔄 #162 — ask it before touching `daily_pipeline_v2.py` |
-| [[#176]] served probability fresh at decision time | every model backtest/live comparison assumes the bots decide on the CURRENT probability; found 2026-09-26 that the model refresh (:10/:40) ran AFTER the betting refresh (:05/:35), so picks used a ~25-min-old p (O/U twin picked at −9.7% EV vs Pinnacle). Round-2 evaluation of live picks must use only picks made after #176 lands, or flag the earlier ones | 🔄 agent in flight 2026-09-26 — if the row is still 🔄 with no owner, its uncommitted edits sit in `workers/jobs/betting_pipeline.py`, `daily_pipeline_v2.py`, `workers/model/combined_ou.py`, `workers/scheduler.py` |
+| [[#176]] served probability fresh at decision time | ✅ done 2026-09-26 (066a9847). ⚠️ **Live picks made BEFORE it are contaminated:** decisions read a ~25-min-old probability (and missed Pinnacle's first quote). Counterfactual on the rebuildable picks: VIP `bot_combined_1x2_ev5_v1` 44 of 91 would NOT have been made (38 where Pinnacle had just started pricing), `bot_v10_1x2_newplus_v1` 9 of 108, `bot_v10_ou_comb_v1` 21 of 26. Evaluate live records ONLY on picks after 066a9847 is live (or flag the earlier ones); backtests were built on pick-time data and are not affected the same way — verify. | ✅ |
 | Data coverage for idea 3 | Betfair (`exchange_quotes`) and `book_fair_probs` are young (fair probs since 2026-09-23) | measure rows per market/day first; if too thin, pre-register idea 3 for later |
 
 Related but NOT prerequisites: [[#169]] serve NEW+ as the production 1X2 (owner said yes; different project, touches the pipeline), [[#160]] Coolbet price guard, [[#153]] admin models page,
@@ -28,7 +28,7 @@ Related but NOT prerequisites: [[#169]] serve NEW+ as the production 1X2 (owner 
 | combined O/U `ou_comb_v1` | O/U 1.5/2.5/3.5 | `workers/model/combined_ou.py` | `ou_model_predictions` (`p_over` = SERVED: Pinnacle where priced, else `p_comb`), params `combiner_ou_params` | 0.5655 / 0.6738 / 0.6428; **Pinnacle alone 0.5612 / 0.6731 / 0.6422** |
 
 Both refit twice daily inside `job_rating_1x2_shadow` (05:30/17:30 UTC) and re-price every 30 min
-(`job_combined_1x2_refresh` :10/:40) — `workers/jobs/rating_1x2_shadow.py` (`_ou_run`, `_write_ou`, `ou_refresh`).
+(since #176, 2026-09-26: as the FIRST step of every betting run — `betting_pipeline.refresh_served_probabilities()`; the :10/:40 cron is gone, and rows older than 20 min are ignored) — `workers/jobs/rating_1x2_shadow.py` (`_ou_run`, `_write_ou`, `ou_refresh`).
 Version names are DESIGN versions (v1 = this recipe) — a new recipe is `_v2`, never a date.
 
 Recipe (both): one logit per AVAILABILITY GROUP (Pinnacle & consensus / Pinnacle only / consensus only /

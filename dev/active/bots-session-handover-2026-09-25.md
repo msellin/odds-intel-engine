@@ -18,7 +18,7 @@ code/DB before relying on any of them (CLAUDE.md "verify, don't trust doc status
 | **O/U combined** `ou_comb_v1` | O/U 1.5/2.5/3.5 | same recipe (Poisson on λ_h+λ_a + power-de-vigged consensus + Pinnacle); SERVED p = Pinnacle where priced, else combined | `workers/model/combined_ou.py`, `ou_model_predictions` | 0.566/0.674/0.643 vs old 0.593/0.709/0.696; Pinnacle alone 0.561/0.673/0.642 |
 
 Both new models refit twice daily inside `job_rating_1x2_shadow` (05:30/17:30) and re-price every 30 min
-(`job_combined_1x2_refresh` :10/:40). Version names are DESIGN versions (v1 = this recipe), not dates.
+(since #176, 2026-09-26: as the FIRST step of every betting run — `betting_pipeline.refresh_served_probabilities()`; the :10/:40 cron is gone, and rows older than 20 min are ignored). Version names are DESIGN versions (v1 = this recipe), not dates.
 ⚠️ NEW+'s consensus still de-vigs PROPORTIONALLY (`market_consensus_1x2.py:12,74`) — known defect, [[#154]].
 
 ## 2. Bots created or changed in this session
