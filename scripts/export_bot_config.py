@@ -255,11 +255,12 @@ def _generator_rows() -> dict[str, dict]:
                               src(F_SHARP, r"lo = max\(1\.0 / \(p - rule\.edge_floor\)")))
         else:
             gates.append(gate("book_quote_max_age_min", br.ODDS_FRESH_MAX_MIN, src(F_ROUTER, r"^ODDS_FRESH_MAX_MIN")))
-        if c.prob_source == "pipeline":
-            # mirrors pick_generator's own condition: the 1.25x own-book anchor check runs
-            # for prob_source='pipeline' only (predictions bots are NOT checked; sharp bots never reach it).
+        if c.prob_source != "sharp_devig":
+            # mirrors pick_generator.generate(): since [[#160]] (2026-09-26) the own-anchor price check
+            # runs on EVERY model-anchored path ('pipeline' AND 'predictions'; O/U at 1.15x, 1x2/BTTS/DC
+            # 1.25x). Sharp bots never reach it — the sharp engine has its own anchor guard.
             gates.append(gate("own_outlier_mult_vs_anchor", pg._OWN_OUTLIER_MULT,
-                              src(F_PICKGEN, r'if cfg\.prob_source != "predictions":')))
+                              src(F_PICKGEN, r'ok, why = _own_outlier_ok\(r\["match_id"\]')))
         if c.selections is not None:
             gates.append(gate("selections", c.selections, line))
         if c.edge_ceiling is not None:
