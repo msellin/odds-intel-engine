@@ -8,3 +8,12 @@ checks:
        WHERE book = 'Coolbet' AND requests_by IS NOT NULL AND hour > now() - interval '3 hours'
     expect: ">= 1"
     expires: "2026-09-28T00:00:00Z"
+  - name: near_kickoff_not_refused_after_listing_reuse
+    mode: eventually
+    sql: |
+      SELECT count(*) FROM book_footprint
+       WHERE book = 'Coolbet' AND hour > now() - interval '6 hours'
+         AND hour >= '2026-09-26 11:00+00'
+         AND refused_by::text LIKE '%near_kickoff_capture%'
+    expect: "== 0"
+    expires: "2026-09-29T00:00:00Z"

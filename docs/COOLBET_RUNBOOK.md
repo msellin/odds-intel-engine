@@ -686,6 +686,10 @@ escalates; it does not.
   `book_footprint.requests_by` says WHO spent it ({scheduler job | process: n}) — read it
   before touching the budget or the reserve:
   `SELECT hour, requests, refused, requests_by FROM book_footprint WHERE book='Coolbet' ORDER BY hour DESC LIMIT 6;`
+  First reading (2026-09-26 09:00-09:14): `coolbet_odds_snapshot` (the board sweep) 405, health_ping 12 —
+  one sweep, ~160 of it category LISTINGS. Fix (LISTING-REUSE, #142): a category's listing is re-fetched
+  only when one of its fixtures is < 3 h from kickoff, else the previous pass's listing (< 55 min, same
+  process) is reused; the sweep summary line says `listings reused N`.
 - **And the sweep itself shrank (#091, 2026-09-23):** the scheduled job now runs the
   board sweep, not `run_bulk`'s search fallback. Verify coverage any time, from an
   IP Coolbet is not blocking, with `scripts/coolbet_board_coverage_diff.py

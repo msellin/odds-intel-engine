@@ -57268,5 +57268,29 @@ def test_admin_models_page():
     return "page gated, loader private, client view server-free, nav + ⌘K + jobs label"
 
 
+@test("COOLBET-LISTING-REUSE — a category listing is re-fetched only when a fixture in it is < 3 h out (#142)")
+def test_coolbet_listing_reuse():
+    """[[#142]]: requests_by (migration 465) showed the board sweep spending ~400 of Coolbet's 500/h, the
+    category listings ~160 per pass, so the closing-price capture was refused. A listing younger than
+    LISTING_REUSE_MAX_MIN with no fixture in the every-pass tier stands in for a fresh one."""
+    import inspect
+    from datetime import datetime, timedelta, timezone
+    from workers.automation import coolbet_explorer as ce
+    now = datetime(2026, 9, 26, 9, 0, tzinfo=timezone.utc)
+    iso = lambda h: (now + timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ")   # noqa: E731
+    far = [{"status": "OPEN", "start": iso(8)}, {"status": "OPEN", "start": iso(30)}]
+    assert ce._listing_reusable((now - timedelta(minutes=30), far), now), "far-only listing, 30 min old: reuse"
+    assert not ce._listing_reusable((now - timedelta(minutes=56), far), now), "older than the max age: fetch"
+    near = far + [{"status": "OPEN", "start": iso(2)}]
+    assert not ce._listing_reusable((now - timedelta(minutes=5), near), now), "a fixture < 3 h out: fetch fresh"
+    closed_near = far + [{"status": "SUSPENDED", "start": iso(1)}]
+    assert ce._listing_reusable((now - timedelta(minutes=5), closed_near), now), "non-OPEN events do not force a fetch"
+    assert not ce._listing_reusable(None, now) and not ce._listing_reusable((now, far + [{"status": "OPEN"}]), now)
+    src = inspect.getsource(ce.run_board_sweep)
+    assert "_listing_reusable(cached, now)" in src and '_LISTING_CACHE[str(cat["id"])] = (now, events)' in src
+    assert src.index("_listing_reusable(cached, now)") < src.index("fetch_events_for_league(session, cat")
+    return "reuse only for far-only listings < 55 min old"
+
+
 if __name__ == "__main__":
     main()

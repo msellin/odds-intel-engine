@@ -2119,6 +2119,35 @@ def _within_every_pass_tier(start, now) -> bool:
     return next(age for below, age in _REFRESH_TIERS if hours < below) == 0
 
 
+# LISTING-REUSE ([[#142]], 2026-09-26). Per-caller attribution (book_footprint.requests_by, migration
+# 465) showed the board sweep spending ~400 of Coolbet's 500 requests/hour, and the category LISTINGS
+# alone ~160 per pass (x2 passes/h) — so the first pass of an hour ate the budget and the near-kickoff
+# closing capture was refused 18-184 times an hour. A category's listing only needs to be fresh when
+# one of its fixtures is in the every-pass tier (< 3 h to kickoff); otherwise the previous pass's
+# listing (< LISTING_REUSE_MAX_MIN old, same process) is used and the request is saved. Fixtures are
+# still re-priced on their own refresh_due schedule; a fixture newly added to a far category is picked
+# up at most one listing age later.
+_LISTING_CACHE: dict[str, tuple[datetime, list]] = {}
+LISTING_REUSE_MAX_MIN = 55
+
+
+def _listing_reusable(cached, now) -> bool:
+    """Pure. True when a cached (fetched_at, events) listing may stand in for a fresh one: younger
+    than LISTING_REUSE_MAX_MIN and no OPEN event in it is inside the every-pass tier (or unparsable)."""
+    if not cached:
+        return False
+    fetched_at, events = cached
+    if (now - fetched_at).total_seconds() / 60 >= LISTING_REUSE_MAX_MIN:
+        return False
+    from workers.automation.coolbet_placer import _parse_iso_start
+    for ev in events:
+        if ev.get("status") not in (None, "OPEN"):
+            continue
+        if _within_every_pass_tier(_parse_iso_start(ev.get("start")), now):
+            return False
+    return True
+
+
 def _last_stored_by_match(bookmaker: str, match_ids: list) -> dict:
     """{match_id: newest stored timestamp} for this book. Fails open (empty → all due)."""
     if not match_ids:
@@ -2223,14 +2252,20 @@ def run_board_sweep(
             cat_memo[str(cat["id"])] = int(cat_memo.get(str(cat["id"]), 0) or 0) + 1
             c["cats_skipped_empty"] += 1
             continue
-        try:
-            events = fetch_events_for_league(session, cat["id"], raise_on_error=True)
-        except Exception as e:
-            # A failed listing is NOT an empty category — skip the memo update
-            # (BOARD-MEMO-POISON) and count it so an all-fail pass is visible.
-            c["cat_fails"] = c.get("cat_fails", 0) + 1
-            log.warning("category %s events fetch failed (%s)", cat["name"], e)
-            continue
+        cached = _LISTING_CACHE.get(str(cat["id"]))
+        if _listing_reusable(cached, now):
+            events = cached[1]                       # LISTING-REUSE (#142): no request
+            c["listings_reused"] = c.get("listings_reused", 0) + 1
+        else:
+            try:
+                events = fetch_events_for_league(session, cat["id"], raise_on_error=True)
+            except Exception as e:
+                # A failed listing is NOT an empty category — skip the memo update
+                # (BOARD-MEMO-POISON) and count it so an all-fail pass is visible.
+                c["cat_fails"] = c.get("cat_fails", 0) + 1
+                log.warning("category %s events fetch failed (%s)", cat["name"], e)
+                continue
+            _LISTING_CACHE[str(cat["id"])] = (now, events)
         cat_near_term = 0
         for ev in events:
             c["events_seen"] += 1
@@ -2304,7 +2339,8 @@ def run_board_sweep(
         f"[cyan]Board sweep {'[DRY-RUN] ' if dry_run else ''}— {c['categories'] or len(cats)} categories, "
         f"{c['events_seen']} events ({c['near_term']} near-term), matched {c['matched']}, "
         f"unmatched {c['unmatched']}, stored {c['stored_rows']} rows"
-        f"{', deferred for the budget reserve ' + str(c['reserve_deferred']) if c.get('reserve_deferred') else ''}[/cyan]"
+        f"{', deferred for the budget reserve ' + str(c['reserve_deferred']) if c.get('reserve_deferred') else ''}"
+        f"{', listings reused ' + str(c['listings_reused']) if c.get('listings_reused') else ''}[/cyan]"
     )
     c["categories"] = len(cats)
 
