@@ -212,7 +212,7 @@ def devig_one(odds: list[float], index: int) -> float | None:
 
 
 # ── ONE fair-price rule per market shape (#162 W3.1, 2026-09-25) ────────────────
-# The #162 audit (dev/active/bot-refactor-audit/A-producers.md §2) found fair probability computed FOUR
+# The #162 audit (dev/archive/bot-refactor-audit/A-producers.md §2) found fair probability computed FOUR
 # ways across the producers, so CLV judged a pick with a different fair price from the one that chose it.
 # This table is the written rule; `fair_prob` is the one entry point. It CHANGES NOTHING by itself —
 # callers move to it one at a time, and a live bot's move is a twin + owner OK (#162 W3.3).

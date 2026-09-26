@@ -3,7 +3,7 @@
 WHAT A "SHARP" BOT IS: fair value = the de-vigged Pinnacle line (no model), and a pick is a
 soft book's quote that beats it. Until this module that one idea had three implementations,
 each with its own fair-price method, Pinnacle freshness rule, floor / ceiling, outlier cap and
-book set (audit dev/active/bot-refactor-audit/A-producers.md §2.1-§2.2, R13):
+book set (audit dev/archive/bot-refactor-audit/A-producers.md §2.1-§2.2, R13):
 
   * pick_generator `_candidates_from_sharp`  (bot_trigger_1x2_sharp_v1 / bot_trigger_ou_sharp_v1)
     Shin for 1x2 AND O/U, book quote <= 180 min (the router's), ceiling checked on the winning

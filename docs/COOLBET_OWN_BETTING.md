@@ -129,7 +129,7 @@ Mac checkout (`git pull` — older code refuses on the contract mismatch) · arm
 > contract is ≥ 1 AND equals the code's `coolbet_state.GATE_CONTRACT` (so a stale Mac checkout cannot stake).
 > The run-level gate is therefore **pause + armed + money-gate contract**. Why: the #162 audit found a bot
 > switched ON today would stake a looser strategy than the one it is scored on
-> (`dev/active/bot-refactor-audit/D-surfaces-money.md`).
+> (`dev/archive/bot-refactor-audit/D-surfaces-money.md`).
 
 > **#162 W4.2 / W4.3a (2026-09-25).** The daily caps (`MAX_BETS_PER_DAY` 80 / `MAX_STAKE_PER_DAY` €800) count
 > EVERY book and every placed or unverified stake — `spent_today()` = placed `coolbet_placement_attempts` ∪ today's

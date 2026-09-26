@@ -55051,7 +55051,7 @@ def test_money_gate_ready_lock():
         assert "money_gate_contract" in _web_path("src/lib/bot-board.ts").read_text(encoding="utf-8")
         for r in ("src/app/api/admin/bots/controls/route.ts", "src/app/api/admin/bots/controls/arm/route.ts"):
             assert "/placement checks are unified/.test(error.message)) return bad(error.message, 409)" in _web_path(r).read_text(encoding="utf-8"), r
-    plan = _engine_path("dev/active/bot-refactor-plan.md")
+    plan = _engine_path("dev/archive/bot-refactor-plan.md")
     w4_open = plan.exists() and "### W4" in plan.read_text(encoding="utf-8") and "W4 CLOSED" not in plan.read_text(encoding="utf-8")
     try:
         rows = o_q("SELECT money_gate_contract FROM coolbet_session_state WHERE id = 1")
@@ -55059,7 +55059,7 @@ def test_money_gate_ready_lock():
         rows = None
     if rows and w4_open:
         assert int(rows[0]["money_gate_contract"] or 0) == 0, \
-            "money_gate_contract was raised while #162 W4 is still open in dev/active/bot-refactor-plan.md"
+            "money_gate_contract was raised while #162 W4 is still open in dev/archive/bot-refactor-plan.md"
 
 
 @test("PREKICKOFF-HONOURS-KILL-SWITCH — the 'PLACE MANUALLY' prompt is silent while placement is paused")

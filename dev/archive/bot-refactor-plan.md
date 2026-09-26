@@ -2,7 +2,7 @@ Parent row: PRIORITY_QUEUE.md #162 BOT-REFACTOR-CLEANUP-2026-09-25
 
 # Bot refactor / clean-up — plan (phase 1 output, 2026-09-25)
 
-Written from four read-only audits — `dev/active/bot-refactor-audit/A-producers.md` (who makes a pick),
+Written from four read-only audits — `dev/archive/bot-refactor-audit/A-producers.md` (who makes a pick),
 `B-publishing.md` (who sees / receives it), `C-scoring.md` (how it is settled and scored),
 `D-surfaces-money.md` (pages + real-money paths) — on top of the 2026-09-24 #139 inventory, genesis and
 phase-5 docs. Every claim below carries its evidence in those files (file:line + SELECTs). Policy is
@@ -89,7 +89,7 @@ read), docs rippled (SYSTEM_MAP + registry in the same commit when a bot changes
 ### W0 — ⟲ Safety rails first (Phase 2, first commits; each ONLY tightens)
 | Step | What | Rule | Risk | Gate |
 |---|---|---|---|---|
-| W0.1 | ✅ 2026-09-25 (`dev/active/bot-refactor-baseline-2026-09-25.md`) **Baseline snapshot**: for 5 fixed bots (bot_v10_1x2, bot_high_roi_global_v2, VIP #1 EV5, O/U EARLY, bot_sharp_1x2_v1) record ROI / CLV / n / P&L on every surface (bot_performance, /admin/bots, Pick queue, /picks panel, dashboard_cache) + real_bets 30-day € + spent_today; diff after every step | §3.5 | none (read-only) | none |
+| W0.1 | ✅ 2026-09-25 (`dev/archive/bot-refactor-baseline-2026-09-25.md`) **Baseline snapshot**: for 5 fixed bots (bot_v10_1x2, bot_high_roi_global_v2, VIP #1 EV5, O/U EARLY, bot_sharp_1x2_v1) record ROI / CLV / n / P&L on every surface (bot_performance, /admin/bots, Pick queue, /picks panel, dashboard_cache) + real_bets 30-day € + spent_today; diff after every step | §3.5 | none (read-only) | none |
 | W0.2 | ✅ 2026-09-25 (migration 436; contract int instead of a boolean after review) **`money_gate_ready` guard**: `coolbet_session_state.money_gate_ready` (default FALSE); `admin_set_control` + the arm route REFUSE `ui_place_enabled=true` / arming while FALSE; `assert_run_may_place` refuses unless code `GATE_CONTRACT` = DB value (so stale Mac code can't bypass); only the migration closing W4 sets it TRUE; smoke fails if TRUE while any W4 step is open | makes "W4 before any switch" code, not a promise | Only tightens; all 11 switches OFF today | **OK** (owner learns switches are locked until W4) — 2 reviewers |
 | W0.3 | ✅ 2026-09-25 Pre-kickoff "PLACE MANUALLY" alert checks `placement_paused` (today it ignores the kill switch and keys on a heartbeat frozen since 09-10) — or unregister it | kill switch honoured | Only tightens | none |
 | W0.4 | ✅ 2026-09-25 Router: a Unibet bet placed but not recorded sets `placement_paused=TRUE` (today it logs and carries on, so the stake escapes caps + cross-book dedupe); `unibet_placer.place_bet(execute=True)` gets its own gate call | RELIABILITY "second path" | Only tightens | 2 reviewers |
