@@ -120,7 +120,7 @@ hours at 750–1,500/h). Measured, first 12–13 metered hours:
 | Book | Req/h median / peak | Budget | Why it costs what it costs |
 |---|---|---|---|
 | Betfair Exchange | ~37 | 150 | **Bulk**: one listing request for all football markets in 48 h, prices 40 markets/request (~11–15 per run, every 15 min). |
-| Tonybet | 54 / 69 | 250 | **Bulk**: one request returns 100 events WITH main odds (~6 pages / 48 h); full boards only at ~24 h / 3 h / 30 min; most of the count is the 2-min live poll. |
+| Tonybet | 54 / 69 | 350 (250 until 2026-09-26) | **Bulk**: one request returns 100 events WITH main odds (~6 pages / 48 h); full boards only at ~24 h / 3 h / 30 min; most of the count is the 2-min live poll. |
 | Optibet | not scheduled | 60 | **Bulk, comma lists**: 1 groups call + ~5 multi-group listings (40 groups each) + ~8 multi-event boards (25 events each) = ~14–21 per sweep, measured 2026-09-26. |
 | Unibet-Site | 84 / 177 | 400 | **Per match**: one lobby page per country + one contest page per matched fixture; low only because it matches ~28% of fixtures (the "World" gap, #112). |
 | Epicbet | 416 / 576 | 1,200 | **Per match, deep**: ~140 league listings + the FULL board (100+ markets) per matched fixture, up to 250 per sweep, 2 sweeps/h. |

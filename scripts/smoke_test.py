@@ -50366,11 +50366,11 @@ def test_footprint_priority_reserve():
         try:
             f.flush()
             f._pending.clear(); f._refusers.clear()
-            # 1. reserve thresholds: Tonybet keeps 40% of 250, Coolbet a fifth of 500
-            assert f.budget("Tonybet") == 250
-            f._db_count = lambda book: 149
+            # 1. reserve thresholds: Tonybet keeps 40% of 350 (250 until 2026-09-26), Coolbet a fifth of 500
+            assert f.budget("Tonybet") == 350
+            f._db_count = lambda book: 209
             assert f.has_headroom("Tonybet")
-            f._db_count = lambda book: 150
+            f._db_count = lambda book: 210
             assert not f.has_headroom("Tonybet")
             f._db_count = lambda book: 399
             assert f.has_headroom("Coolbet")

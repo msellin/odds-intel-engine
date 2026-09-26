@@ -58,8 +58,11 @@ log = logging.getLogger(__name__)
 # exit IP flagged), and its refresh-by-kickoff change should bring it well under this.
 _DEFAULT_BUDGETS = {
     "Coolbet": 500,           # peak 508 / median 294 before refresh-by-kickoff; danger zone 750+
-    "Tonybet": 250,           # was 150 (peak 69 / median 51 weekdays); raised 2026-09-25 (#151): the
+    "Tonybet": 350,           # was 150 (peak 69 / median 51 weekdays); raised 2026-09-25 (#151): the
                               # 09-25 weekend slate needed ~25 listing pages/sweep + ~120 deep boards/h.
+                              # 250 -> 350 2026-09-26: Saturday's MUST-RUN traffic alone was ~136/h
+                              # (near-kickoff 96 + live 24 + results 10) against a 100 reserve, so
+                              # tonybet_live was refused 3 runs in a row at 14:5x; sweep ~170/h.
                               # Bulk API, no known block threshold (unlike Coolbet's #108 750+).
     "Unibet-Site": 400,       # peak 177 / median 87, + headroom for the new "World" fixtures
     "Epicbet": 1200,          # peak 576 / median 416 (2 sweeps/h + near-kickoff)
