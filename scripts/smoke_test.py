@@ -49021,6 +49021,21 @@ def test_stale_window_study():
     assert adj[0] == 0.04 and adj[2] == 0.09 and adj[1] == 0.09 and adj[3] == 0.5, adj
 
 
+@test("STALE-WINDOW-REPLICATION — #121 second method stays read-only and grades vs an ex-Pinnacle, ex-own-book close")
+def test_stale_window_replication():
+    """[[#121]] 2026-09-26 replication (docs/STALE_WINDOW_STUDY_2026_09_24.md §10). A stale leg is
+    graded by Pinnacle having moved if Pinnacle is the judge (§85 / §67), so the close must leave
+    Pinnacle AND the leg's own book out, need >= 5 books, and the n >= 30 gate must stay."""
+    from pathlib import Path
+    src = (Path(__file__).parent.parent / "scripts" / "analysis" / "stale_window_replication.py").read_text()
+    assert "PRE-REGISTRATION" in src
+    assert not any(k in src.upper() for k in ("INSERT INTO", "UPDATE ", "DELETE FROM")), "read-only"
+    from scripts.analysis import stale_window_replication as m
+    assert "Pinnacle" in m.NOT_ANCHOR and m.CONS_MIN_BOOKS == 5 and m.N_MIN == 30
+    assert (m.MOVE_REL, m.EV_MIN) == (0.03, 0.03)
+    assert "bk == exclude" in src, "the leg's own book must be excluded from its close"
+
+
 @test("XG-LATE-FILL — #111 re-fetches rows whose xG AF published late, never overwrites with NULL")
 def test_xg_late_fill():
     """[[#111]], 2026-09-24. From ~2026-08-31 API-Football adds xG 1-4 days after a

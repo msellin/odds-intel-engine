@@ -231,3 +231,34 @@ exchange (§78), and it has no closes yet.
   tie in §8.
 * Pooled 1X2 needs ~120 matches before a vs-0 test can see +2%. There are no grounds to
   pre-register a per-book cell before then.
+
+## 10. Independent replication, 2026-09-26 — same verdict
+
+`scripts/analysis/stale_window_replication.py` (pre-registered in its docstring before the run; written
+without reading this study, so it is a genuine second method, not a re-run). Differences from §§1–8:
+"stale" = the book's FIRST scraped price after a ≥3% Pinnacle move equals its last pre-move price;
+the close is the median of ≥5 books excluding Pinnacle and the leg's OWN book (the three other Estonian
+books stay in); 9 days to 2026-09-26 (2,098 matches, overlaps §§1–8 by ~6 days, so it is a check of the
+method rather than a fresh sample).
+
+**Staleness replicates:** the first scrape after a ≥3% Pinnacle move was unchanged in 65–75% of cases at
+every Estonian book (Coolbet 1X2 74% of 529, Unibet-Site 65% of 592, Epicbet 71% of 1,228, Tonybet 71% of 241;
+O/U 2.5 64–75%). Median time until we SAW the price change ≈ 2.5 h — an upper bound, because each book is
+scraped about hourly. (Epicbet's 43% in the brainstorm was a different definition; at first-scrape level it
+lags like the others.)
+
+**Value does not:** only 59 stale-above-new-fair legs in 9 days across four books (n < 30 everywhere → no
+test, per the pre-registration).
+
+| Book | stale legs n | CLV vs independent close | vs Pinnacle close | no-move control n | control CLV |
+|---|---|---|---|---|---|
+| Coolbet | 19 | −6.0% [−9.1, −2.2] | +4.8% | 390 | −4.3% |
+| Unibet-Site | 12 | −0.4% [−11.1, +9.7] | +8.2% | 319 | −1.2% |
+| Epicbet | 20 | +5.1% [−5.8, +16.7] | +6.3% | 703 | −0.9% |
+| Tonybet | 8 | −13.7% | +2.0% | 78 | −5.3% |
+
+The §8 circularity reappears exactly: stale legs are +2…+8% against Pinnacle's close and ≈ 0 or
+negative against everyone else's. The pre-registered expectation (A > 0 at Coolbet/Unibet, A > B) is not
+supported — Coolbet's stale legs are worse than its no-move control. **Verdict unchanged: do not build a
+fresh-move trigger.** The §9 path (forward-log events, grade vs the exchange close) remains the only open
+route; nothing further is scheduled from this replication.
