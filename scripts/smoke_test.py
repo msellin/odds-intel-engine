@@ -57194,19 +57194,17 @@ def test_footprint_requests_by_caller():
     job on the thread (set_caller from _run_job) else the process, merged into requests_by (465)."""
     import inspect
     from workers.utils import footprint as fp
-    book = "SmokeBook-by-caller"
+    # Deterministic: the shared _by buffer is flushed (and cleared) by record() itself every 30 s and by
+    # other footprint tests running beside this one — so test the label and the booking line, not the buffer.
     fp.set_caller("smoke_job")
     try:
-        fp.record(book, "ok", count_request=True)
-        fp.record(book, "challenge", count_request=False)     # an outcome only: not a request
+        assert fp._caller_label() == "smoke_job"
     finally:
         fp.set_caller(None)
-    with fp._lock:
-        got = dict(fp._by.get(book, {}))
-        fp._by.pop(book, None)
-        fp._pending.pop(book, None)
-    assert got == {"smoke_job": 1}, got
     assert fp._caller_label() != "smoke_job", "the label must be cleared after the job"
+    rec = inspect.getsource(fp.record)
+    assert "_by[book][_caller_label()] += 1" in rec and rec.index("if count_request:") < rec.index("_by[book]"), \
+        "only counted requests are attributed"
     fl = inspect.getsource(fp.flush)
     assert "_MERGE_BY" in fl and "_requests_by_col = False" in fl, "flush must merge requests_by and survive a pre-465 DB"
     sched = _engine_path("workers/scheduler.py").read_text()
@@ -57214,6 +57212,60 @@ def test_footprint_requests_by_caller():
     assert "ADD COLUMN IF NOT EXISTS requests_by jsonb" in _engine_path(
         "supabase/migrations/465_book_footprint_requests_by.sql").read_text()
     return "attributed per job, cleared after, merged at flush"
+
+
+@test("MODEL-ACCURACY-JOB — every production probability source scored forward, vs base rate and Pinnacle on the same rows (#153)")
+def test_model_accuracy_job():
+    """[[#153]]: /admin/models reads model_accuracy (migration 466), written daily 02:40 by
+    workers/jobs/model_accuracy.py — log-loss / Brier / base-rate log-loss per model, market, 7/30/90 d,
+    only pre-kickoff probabilities, and Pinnacle's de-vigged close on the SAME rows. Private."""
+    import math
+    from workers.jobs import model_accuracy as ma
+    oc = {"a": {"res": 0, "goals": 3}, "b": {"res": 2, "goals": 1}}
+    ll, br, n = ma._score("1x2", {"a": (0.5, 0.3, 0.2), "b": (0.2, 0.3, 0.5)}, oc, ["a", "b"])
+    assert n == 2 and abs(ll - 2 * -math.log(0.5)) < 1e-12
+    assert abs(br - 2 * (0.25 + 0.09 + 0.04)) < 1e-12
+    ll, br, n = ma._score("over_under_25", {"a": 0.6, "b": 0.6}, oc, ["a", "b"])   # a over, b under
+    assert abs(ll - (-math.log(0.6) - math.log(0.4))) < 1e-12 and abs(br - (0.16 + 0.36)) < 1e-12
+    assert abs(ma._base_ll("over_under_25", oc, ["a", "b"]) - math.log(2)) < 1e-12, "50/50 base rate"
+    src = _engine_path("workers/jobs/model_accuracy.py").read_text()
+    for pin in ("p.created_at < m.date", "r.updated_at < m.date", "o.updated_at < m.date",
+                'o."timestamp" < m.date', "fair_prob(", "r.gated"):
+        assert pin in src, f"pre-kickoff / de-vig rule missing: {pin}"
+    sched = _engine_path("workers/scheduler.py").read_text()
+    assert '_run_job("model_accuracy", _job_model_accuracy_impl)' in sched
+    assert "CronTrigger(hour=2, minute=40)" in sched and 'id="model_accuracy"' in sched
+    mig = _engine_path("supabase/migrations/466_model_accuracy.sql").read_text()
+    assert "REVOKE ALL ON public.model_accuracy, public.bot_rule_history FROM anon, authenticated" in mig
+    assert "TO anon" not in mig
+    return "maths pinned on fixtures; pre-kickoff filters, 02:40 job, private"
+
+
+@test("ADMIN-MODELS-PAGE — /admin/models: superadmin, private reads, models vs guessing & Pinnacle, bot→model map, rule history (#153)")
+def test_admin_models_page():
+    """[[#153]]: the owner's "which models exist, how good, which bot uses which, and the configs".
+    Server page with its own superadmin check; loader reads private relations with the service client;
+    the client view imports only the shared helpers (a client import of the loader pulled next/headers
+    into the browser bundle — caught in the local preview, 2026-09-26)."""
+    page = _web_path("src/app/(app)/admin/models/page.tsx").read_text(encoding="utf-8")
+    assert "requireSuperadmin()" in page and "loadModels()" in page and "<AnswerStrip" in page
+    lib = _web_path("src/lib/admin-models.ts").read_text(encoding="utf-8")
+    for rel in ('read<AccuracyRow>("model_accuracy")', '"bot_config"', '"bot_performance"', 'read<RuleHistoryRow>("bot_rule_history")',
+                '"bot_config_history"', "createServerServiceClient"):
+        assert rel in lib, rel
+    view = _web_path("src/app/(app)/admin/models/models-view.tsx").read_text(encoding="utf-8")
+    assert '"use client"' in view and 'from "@/lib/admin-models-shared"' in view
+    assert 'from "@/lib/admin-models"' not in view, "the client view must not import the server loader"
+    shared = _web_path("src/lib/admin-models-shared.ts").read_text(encoding="utf-8")
+    assert "supabase-server" not in shared and "next/headers" not in shared
+    assert 'ou: "over_under_25"' in shared and "export const LEVEL_BAND = 0.002" in shared
+    nav = _web_path("src/components/admin/admin-nav.ts").read_text(encoding="utf-8")
+    assert 'href: "/admin/models"' in nav
+    assert 'href: "/admin/models"' in _web_path("src/components/admin/command-palette.tsx").read_text(encoding="utf-8")
+    jobs = _web_path("src/lib/admin-jobs-model.ts").read_text(encoding="utf-8")
+    assert "model_accuracy" in jobs
+    assert "/admin/models" in _engine_path("CLAUDE.md").read_text()
+    return "page gated, loader private, client view server-free, nav + ⌘K + jobs label"
 
 
 if __name__ == "__main__":

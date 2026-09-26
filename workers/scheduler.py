@@ -1485,6 +1485,19 @@ def job_export_bot_config():
     _run_job("export_bot_config", _job_export_bot_config_impl)
 
 
+def _job_model_accuracy_impl():
+    """[[#153]] (2026-09-26): score every production probability source on settled matches
+    (log-loss, Brier, base rate, Pinnacle on the same rows; 7/30/90 d) into model_accuracy
+    (migration 466) for /admin/models. Read-only apart from its own table."""
+    from workers.jobs.model_accuracy import run
+    r = run()
+    return {"stored": r.get("written", 0)}
+
+
+def job_model_accuracy():
+    _run_job("model_accuracy", _job_model_accuracy_impl)
+
+
 # #162 (2026-09-26): the pre-kickoff "PLACE MANUALLY" catch-net is DELETED. It keyed on the retired
 # Mac daemon's heartbeat (frozen since 2026-09-10, so it always read "daemon down"), picked
 # candidates by maturity label and gated them with the old coolbet_placer floor — a second
@@ -3549,6 +3562,9 @@ def main():
     # wired yet — after a config change run `python3 scripts/export_bot_config.py` by hand.
     scheduler.add_job(job_export_bot_config, CronTrigger(hour=3, minute=40),
                       id="export_bot_config", name="Export bot config 03:40")
+    # [[#153]] model accuracy for /admin/models — after the 01:00 settlement, before the 03:30 backup
+    scheduler.add_job(job_model_accuracy, CronTrigger(hour=2, minute=40),
+                      id="model_accuracy", name="Model accuracy 02:40")
 
     # ML-PIPELINE-UNIFY Stage 5a — weekly retrain Sunday 03:00 UTC, runs train.py +
     # compare_models.py. Promotion stays manual (operator flips MODEL_VERSION).

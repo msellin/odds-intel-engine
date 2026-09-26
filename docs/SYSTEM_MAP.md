@@ -1032,6 +1032,15 @@ Smoke `COOLBET-MODEL-PRICE-GUARD`.
 
 ---
 
+## Which model does each bot use, and how good is it? ([[#153]], 2026-09-26)
+
+**/admin/models** answers it live: the forward accuracy of every probability source (table `model_accuracy`,
+job `model_accuracy` 02:40 UTC — log-loss vs guessing and vs Pinnacle on the same matches, 7/30/90 d), every
+active bot's source from `bot_config.prob_source` mapped to a model family, and each bot's
+(rule_version, model_version) history (view `bot_rule_history`). Families: NEW+ `r1x2_comb_v1`, NEW
+`r1x2_d8plus_v1`, O/U combined `ou_comb_v1`, the old ensemble (`calibrated_prob` / `predictions`), Pinnacle
+de-vigged, other-books consensus (not yet scored), none (in-play).
+
 ## 5. Deep-dive docs (this map links out; it does not duplicate them)
 
 - `docs/BETTING_GATE_DECISIONS.md` — how the model floors (13%/8%) were decided, the canonical backtest method, why runs disagreed.

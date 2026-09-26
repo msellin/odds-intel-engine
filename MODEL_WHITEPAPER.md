@@ -785,6 +785,18 @@ Validation script: `scripts/check_calibration.py` — produces calibration table
 
 ---
 
+
+### 5.5 Forward accuracy, measured daily ([[#153]], 2026-09-26)
+
+Holdout numbers are a snapshot; `workers/jobs/model_accuracy.py` (daily 02:40 UTC → table `model_accuracy`,
+shown on /admin/models) keeps measuring every production source FORWARD. Rules: settled matches only; a
+probability counts only if it was written before kickoff (`created_at` / `updated_at` < kickoff); 1X2 triples
+renormalised to sum to 1; O/U lines 1.5/2.5/3.5 (no pushes). Per model, market and window (7/30/90 d): mean
+log-loss, Brier, and two references on the SAME rows — the window's base-rate log-loss ("guessing") and
+Pinnacle's latest pre-kickoff price de-vigged with `devig.fair_prob` (Shin 3-way, power 2-way). First run
+(30 d to 2026-09-26): the served old 1X2 ensemble (v20260830) **1.178 vs 1.070 guessing on 6,170 matches —
+worse than guessing, live** (Pinnacle 0.977 on 5,812 of them); NEW+ 0.948 vs Pinnacle 0.953 on 194 shared
+matches (level); combined O/U 2.5 served level with Pinnacle.
 ## 6. Edge Detection & Bet Sizing
 
 ### 6.1 Edge Calculation
