@@ -1,4 +1,4 @@
-Parent row: PRIORITY_QUEUE.md #186 (AH-MARKET-BOT-FOR-CUSTOMERS-2026-09-26). Findings brief — holds no open work; the work lives on the row.
+Parent row: PRIORITY_QUEUE.md #187 (AH-MARKET-BOT-FOR-CUSTOMERS-2026-09-26). Findings brief — holds no open work; the work lives on the row.
 
 # Asian handicap as our third market — research brief (2026-09-26)
 
