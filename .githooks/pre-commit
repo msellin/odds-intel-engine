@@ -14,6 +14,18 @@ if [ -n "$py" ]; then
   python3 -m py_compile $py || { echo "pre-commit: a staged Python file does not compile"; exit 1; }
 fi
 
+# FLOORS-GENERATED-FILE (#168 f): the web's src/lib/generated/engine-floors.ts is generated from these
+# engine files. Committing one without regenerating left FLOORS-ONE-SOURCE-CROSS-LANGUAGE red in CI
+# until someone pushed the web repo (13 red runs in the audit). Check it here, where it is cheap.
+if printf '%s\n' "$staged" | grep -qE '^(workers/automation/coolbet_placer\.py|workers/registry/bot_registry\.py|workers/jobs/pick_triggers\.py|workers/jobs/daily_pipeline_v2\.py|workers/jobs/ou_sharp_outlier\.py|scripts/gen_frontend_floors\.py)$' \
+   && [ -d ../odds-intel-web/src/lib/generated ]; then
+  if ! python3 scripts/gen_frontend_floors.py --check >/dev/null 2>&1; then
+    echo "pre-commit: odds-intel-web/src/lib/generated/engine-floors.ts is stale for this change."
+    echo "  run: python3 scripts/gen_frontend_floors.py   then commit + push odds-intel-web as well."
+    exit 1
+  fi
+fi
+
 if printf '%s\n' "$staged" | grep -qx 'PRIORITY_QUEUE.md'; then
   for t in TASK-NUMBERS-STABLE SINGLE-MASTER-TASK-LIST; do
     out=$(python3 scripts/smoke_test.py -f "$t" 2>&1) || { printf '%s\n' "$out" | grep -E '✗|Error' ; echo "pre-commit: $t failed"; exit 1; }

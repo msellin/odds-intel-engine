@@ -114,7 +114,7 @@ backlog forms outside the master.
 - **One commit + one push per task per repo**, not one per step.
 - **The checkout and index are shared with other live sessions.** Never `git stash`, `git reset`, or `git checkout` files you did not edit. Stage only your own hunks; `git pull --rebase --autostash` right before pushing.
 - **Never read `PRIORITY_QUEUE.md` (2.4 MB) or `scripts/smoke_test.py` (58k lines) whole** — `grep -n`, then read line ranges.
-- **Pre-commit hook (`.githooks/pre-commit`, enable once per checkout: `git config core.hooksPath .githooks`)** — compiles every staged `.py`, and when `PRIORITY_QUEUE.md` is staged runs `TASK-NUMBERS-STABLE` + `SINGLE-MASTER-TASK-LIST` (~5 s). Catches in seconds what used to turn CI red minutes later. Never `--no-verify`.
+- **Pre-commit hook (`.githooks/pre-commit`, enable once per checkout: `git config core.hooksPath .githooks`)** — compiles every staged `.py`, and when `PRIORITY_QUEUE.md` is staged runs `TASK-NUMBERS-STABLE` + `SINGLE-MASTER-TASK-LIST` (~5 s), and when a floor source is staged checks the generated web `engine-floors.ts` (`gen_frontend_floors.py --check`, ~2 s). Catches in seconds what used to turn CI red minutes later. Never `--no-verify`.
 
 ### Don't file what you can fix — the queue is not a diary
 

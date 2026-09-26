@@ -57143,6 +57143,7 @@ def test_pre_commit_fast_checks():
     assert os.access(h, os.X_OK), "hook must be executable"
     assert "python3 -m py_compile" in src
     assert "TASK-NUMBERS-STABLE" in src and "SINGLE-MASTER-TASK-LIST" in src
+    assert "gen_frontend_floors.py --check" in src, "floor sources staged → the generated web file is checked (#168 f)"
     assert "git config core.hooksPath .githooks" in _engine_path("CLAUDE.md").read_text()
     return "hook present, executable, documented"
 
