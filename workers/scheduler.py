@@ -697,6 +697,25 @@ def _tonybet_odds_snapshot_wrapper():
     _run_job("tonybet_odds_snapshot", job_tonybet_odds_snapshot)
 
 
+def job_optibet_odds_snapshot():
+    """OPTIBET-SWEEPER (#101, live 2026-09-26) — 30-min Optibet pre-match odds from its own
+    trading backend (ensb-trading.optibet.ee), ~14-21 requests per 48 h sweep. Collection
+    only (not in ACCESSIBLE_BOOKMAKERS). Raises on no events / nothing stored so a 403 block
+    page reads as a failure, and auto-pause backs off instead of keeping the block fresh."""
+    from workers.automation.optibet_feed import run_bulk
+    res = run_bulk(hours=48)
+    console.print(f"  optibet: {res}")
+    if not res.get("events"):
+        raise RuntimeError(f"Optibet returned no pre-match football events: {res}")
+    if not res.get("stored"):
+        raise RuntimeError(f"Optibet sweep stored nothing: {res}")
+    return res
+
+
+def _optibet_odds_snapshot_wrapper():
+    _run_job("optibet_odds_snapshot", job_optibet_odds_snapshot)
+
+
 def job_betfair_exchange_snapshot():
     """BETFAIR-EXCHANGE-READER (#117, 2026-09-24). Exchange back/lay + liquidity for our
     fixtures in the next 48 h → `exchange_quotes`, through the London exit (SOCKS :1082,
@@ -846,6 +865,7 @@ _CATCHUP_SWEEPS = (
     ("coolbet_odds_snapshot", "_coolbet_odds_snapshot_wrapper", 30),
     ("epicbet_odds_snapshot", "_epicbet_odds_snapshot_wrapper", 30),
     ("tonybet_odds_snapshot", "_tonybet_odds_snapshot_wrapper", 30),
+    ("optibet_odds_snapshot", "_optibet_odds_snapshot_wrapper", 30),
     ("unibet_site_odds", "_unibet_site_odds_wrapper", 30),
     ("betfair_exchange_snapshot", "_betfair_exchange_snapshot_wrapper", 15),
 )
@@ -3430,6 +3450,14 @@ def main():
     scheduler.add_job(_tonybet_odds_snapshot_wrapper,
                       CronTrigger(hour="*", minute="1,31"),
                       id="tonybet_odds_snapshot", name="Tonybet Odds [30min]",
+                      max_instances=1)
+    # OPTIBET-SWEEPER (#101, scheduled 2026-09-26). :06/:36 — every :00-:05 minute is taken
+    # by AF / the other direct books / the betting refresh; Optibet is collection-only, so
+    # landing just after the refresh costs nothing placeable. Through the Estonian exit
+    # (EPICBET_RESIDENTIAL_PROXY): the bare Hetzner IP still gets Optibet's 403 block page.
+    scheduler.add_job(_optibet_odds_snapshot_wrapper,
+                      CronTrigger(hour="*", minute="6,36"),
+                      id="optibet_odds_snapshot", name="Optibet Odds [30min]",
                       max_instances=1)
     # #119 retention: before the 03:30 backup.
     scheduler.add_job(_exchange_quotes_prune_wrapper, CronTrigger(hour=3, minute=10),

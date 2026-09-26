@@ -3,7 +3,7 @@ OddsIntel — NEAR-KICKOFF-CAPTURE (2026-09-11): direct-book closing prices.
 
 WHAT. Every 5 minutes, for fixtures kicking off in the next 15 minutes, fetch
 that ONE fixture from each direct book we collect (Coolbet, Unibet-Site, Epicbet,
-Tonybet) straight by its book event id, and write the prices to odds_snapshots.
+Tonybet, Optibet) straight by its book event id, and write the prices to odds_snapshots.
 `minutes_to_kickoff` <= 15 makes the shared writers stamp them is_closing=TRUE.
 
 WHY. The direct-book sweeps walk the whole board every 30 min, so the last price we
@@ -19,7 +19,8 @@ with an EMPTY board is logged (#112), not just counted.
 
 WHERE IT RUNS (updated 2026-09-24, #112 — it used to say "the operator's Mac"). The VPS
 systemd timer `oddsintel-near-kickoff-epicbet` (deploy/vps/, every 5 min since
-2026-09-23), through the Estonian exit, for `--books Epicbet,Unibet-Site,Tonybet,Coolbet`
+2026-09-23), through the Estonian exit, for `--books Epicbet,Unibet-Site,Tonybet,Coolbet,Optibet` (Optibet added 2026-09-26, #101;
+its close is one batched request for every due fixture)
 (Coolbet re-added 2026-09-24 after the 09-23 Imperva back-off). The Mac launchd plist
 is parked. Epicbet, if it ever falls back to FlareSolverr, uses its own session id
 (EPICBET_FLARE_SESSION) so it can never destroy a sweep's session.
@@ -57,7 +58,7 @@ log = logging.getLogger(__name__)
 
 WINDOW_MIN = 15    # capture fixtures kicking off within this many minutes
 MIN_GAP_MIN = 6    # skip a (match, book) with a snapshot this recent
-BOOKS = ("Coolbet", "Unibet-Site", "Epicbet", "Tonybet")
+BOOKS = ("Coolbet", "Unibet-Site", "Epicbet", "Tonybet", "Optibet")
 UNIBET_SPACING_S = 1.2  # same pacing as the Unibet sweep (DataDome is behavioural)
 
 
@@ -224,8 +225,35 @@ def capture_tonybet(due: list[dict], dry_run: bool) -> dict:
     return c
 
 
+def capture_optibet(due: list[dict], dry_run: bool) -> dict:
+    """OPTIBET (#101, 2026-09-26): every due fixture's full board in ONE request —
+    Optibet's /events/{id,id,…} takes a comma list — so the close costs <=12 requests/h."""
+    from workers.automation import optibet_feed as ob
+    from workers.api_clients.supabase_client import store_book_odds_snapshots
+    c = {"due": len(due), "stored": 0, "fails": 0}
+    due = [d for d in due if not _kicked_off(d)]
+    if not due:
+        return c
+    boards = ob.fetch_boards(ob._session(), [d["book_event_id"] for d in due])
+    for d in due:
+        if _kicked_off(d):
+            continue
+        games = boards.get(str(d["book_event_id"]))
+        if not games:
+            c["fails"] += 1
+            log.warning("near-KO Optibet event %s (match %s) returned an empty board",
+                        d["book_event_id"], d["match_id"])
+            continue
+        rows, _dropped = ob.guard_rows(ob.parse_games(games), d["match_id"])
+        if dry_run or not rows:
+            c["stored"] += len(rows) if dry_run else 0
+            continue
+        c["stored"] += store_book_odds_snapshots(ob.BOOKMAKER, d["match_id"], rows, _mins_to_ko(d["date"]))
+    return c
+
+
 _CAPTURE = {"Coolbet": capture_coolbet, "Unibet-Site": capture_unibet, "Epicbet": capture_epicbet,
-            "Tonybet": capture_tonybet}
+            "Tonybet": capture_tonybet, "Optibet": capture_optibet}
 
 
 def run_near_kickoff_capture(books=BOOKS, *, dry_run: bool = False,

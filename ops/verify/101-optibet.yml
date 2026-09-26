@@ -1,15 +1,27 @@
-# [[#101]] Optibet collector built 2026-09-26 but NOT scheduled (both VPS egresses get Optibet's 403 block page).
-# Guards: nothing on the VPS starts calling Optibet by accident (that would keep the block fresh and burn the shared
-# Estonian exit), and the only Optibet odds in the table are the 210 hand-written test rows until the owner decides.
+# [[#101]] Optibet scheduled 2026-09-26 (~21:00 UTC push). The 09-26 "block" was the bare Hetzner IP only;
+# through the Estonian exit /groups answered 200 at 16:10, 18:10 and 20:45 UTC. (The first two probes
+# were marked expired only because the cmd printed a "DB pool created" log line before the 200.)
+# These confirm the sweep writes, is not failing, and the near-kickoff close lands.
 task: "#101"
 checks:
-  - name: no_scheduled_optibet_runs
-    mode: invariant
-    sql: "SELECT count(*) FROM pipeline_runs WHERE job_name LIKE 'optibet%'"
-    expect: "== 0"
-    expires: "2026-10-10T00:00:00Z"
-  - name: no_optibet_rows_beyond_the_test_write
-    mode: invariant
-    sql: "SELECT count(*) FROM odds_snapshots WHERE bookmaker = 'Optibet' AND timestamp > '2026-09-26 15:00+00'"
-    expect: "== 0"
-    expires: "2026-10-10T00:00:00Z"
+  - name: optibet_sweep_writes
+    mode: now
+    sql: "SELECT count(*) FROM odds_snapshots WHERE bookmaker = 'Optibet' AND timestamp > now() - interval '60 minutes'"
+    expect: "> 2000"
+    run_after:
+      time: 2026-09-26T22:15:00Z
+    expires: "2026-09-27T06:00:00Z"
+  - name: optibet_sweep_not_failing
+    mode: now
+    sql: "SELECT count(*) FROM pipeline_runs WHERE job_name = 'optibet_odds_snapshot' AND status = 'completed' AND started_at > now() - interval '3 hours'"
+    expect: ">= 3"
+    run_after:
+      time: 2026-09-27T01:00:00Z
+    expires: "2026-09-27T12:00:00Z"
+  - name: optibet_closing_captured
+    mode: now
+    sql: "SELECT count(DISTINCT match_id) FROM odds_snapshots WHERE bookmaker = 'Optibet' AND is_closing AND timestamp > now() - interval '12 hours'"
+    expect: "> 20"
+    run_after:
+      time: 2026-09-27T16:00:00Z
+    expires: "2026-09-28T00:00:00Z"

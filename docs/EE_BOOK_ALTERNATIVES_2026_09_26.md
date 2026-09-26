@@ -1,7 +1,7 @@
 # Estonian books beyond Optibet — alternatives survey (2026-09-26)
 
 **#101 follow-up, research only (🤖👥 BOTH).** Optibet is parked: both VPS egresses get its 403
-block page (DATA_SOURCES.md → Optibet). This extends `docs/EE_BOOK_SURVEY_2026_09_23.md`. It does
+block page (DATA_SOURCES.md → Optibet). **[UPDATE 2026-09-26 evening: unparked — the block was the bare Hetzner IP only; Optibet is live through the Estonian exit.]** This extends `docs/EE_BOOK_SURVEY_2026_09_23.md`. It does
 not repeat that survey: the licensee list, Tonybet (built), 20bet (= Tonybet, 203/203 prices
 identical) and the 48 h coverage table all stand. What is new is below: the books the 09-23
 survey left as "untested / not probed", Paf's open caveat, and a margin read for each book.

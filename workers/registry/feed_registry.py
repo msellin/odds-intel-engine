@@ -62,6 +62,11 @@ FEEDS: list[dict] = [
      "units": ["oddsintel-zone-egress.service"],
      "schedule": ":01 / :31 UTC", "interval_min": 30, "stale_after_min": 90,
      "health": "data", "data": {"odds_books": ["Tonybet"]}},
+    {"id": "optibet_prematch", "auto_pause": True, "wrapper": "_optibet_odds_snapshot_wrapper", "controls": ["pause", "run_now"], "label": "Optibet — pre-match odds (collection only)", "book": "Optibet",
+     "category": "book", "kind": "pre-match", "job": "optibet_odds_snapshot",
+     "units": ["oddsintel-zone-egress.service"],
+     "schedule": ":06 / :36 UTC", "interval_min": 30, "stale_after_min": 90,
+     "health": "data", "data": {"odds_books": ["Optibet"]}},
     {"id": "tonybet_live", "wrapper": "_tonybet_live_wrapper", "controls": ["pause", "run_now"], "label": "Tonybet — live score / corners / cards + in-play odds", "book": "Tonybet",
      "category": "book", "kind": "live", "job": "tonybet_live",
      "schedule": "every 120 s", "interval_min": 2, "stale_after_min": 20,
@@ -85,7 +90,7 @@ FEEDS: list[dict] = [
      "schedule": "checks every 5 min · captures 15 min before each kickoff",
      "interval_min": 5, "stale_after_min": 180,
      "health": "service", "data": {"table": "odds_snapshots", "ts": "timestamp",
-                                    "where": "is_closing AND bookmaker IN ('Epicbet','Unibet-Site','Tonybet','Coolbet')"}},
+                                    "where": "is_closing AND bookmaker IN ('Epicbet','Unibet-Site','Tonybet','Coolbet','Optibet')"}},
 
     # ── API-Football ────────────────────────────────────────────────────────
     {"id": "af_odds", "wrapper": "job_odds_refresh", "controls": ["pause", "run_now"], "label": "API-Football — bulk odds (9 books)", "book": None,
@@ -151,4 +156,4 @@ FEEDS_BY_ID = {f["id"]: f for f in FEEDS}
 # hourly (3–12 h out) or ~2-hourly (> 12 h), so at night their newest row can legitimately
 # be ~2 h old — interval 60 / stale 150 instead of 30 / 90. Epicbet's listing still writes
 # every pass (only its deep board thins), so it keeps 30 / 90.
-COVERAGE_BOOKS = ("Coolbet", "Epicbet", "Unibet-Site", "Tonybet", "Pinnacle", "Betfair-Exchange")
+COVERAGE_BOOKS = ("Coolbet", "Epicbet", "Unibet-Site", "Tonybet", "Optibet", "Pinnacle", "Betfair-Exchange")

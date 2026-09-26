@@ -68,8 +68,9 @@ _DEFAULT_BUDGETS = {
     "Epicbet": 1200,          # peak 576 / median 416 (2 sweeps/h + near-kickoff)
     "Betfair-Exchange": 150,  # peak 53 / median 45 (~15 req per run incl. step-D markets, 4 runs/h)
     "Epicbet-inplay": 3000,   # slimmed collector: 90 s x 25 fixtures ~ 2,000/h worst case
-    "Optibet": 60,            # #101 2026-09-26: ~14-21 requests per sweep (groups + multi-group listing +
-                              # multi-event boards); 2 sweeps/h would be ~42. Not scheduled yet (VPS exits 403).
+    "Optibet": 90,            # #101 2026-09-26: ~14-21 requests per sweep (groups + multi-group listing +
+                              # multi-event boards), 2 sweeps/h ~42, + near-kickoff closes (ONE batched
+                              # request per 5-min run, <=12/h). 60 -> 90 when scheduled; ~2x the peak.
 }
 # Share of each hour's budget kept back for requests that cannot wait (see PRIORITY
 # RESERVE above). Sized from the 09-25 metering: Tonybet's must-run traffic is live

@@ -38499,7 +38499,7 @@ def _():
     assert 'setdefault("EPICBET_FLARE_SESSION"' in src, (
         "a manual run must not fall back to the sweep's Epicbet FS session id"
     )
-    assert set(nk._CAPTURE) == {"Coolbet", "Unibet-Site", "Epicbet", "Tonybet"}
+    assert set(nk._CAPTURE) == {"Coolbet", "Unibet-Site", "Epicbet", "Tonybet", "Optibet"}
 
     # All three sweeps record the pairing they already compute.
     for path, needle in (
@@ -38521,7 +38521,7 @@ def _():
     unit = pathlib.Path("deploy/vps/oddsintel-near-kickoff-epicbet.service").read_text()
     timer = pathlib.Path("deploy/vps/oddsintel-near-kickoff-epicbet.timer").read_text()
     books_line = next(l for l in unit.splitlines() if l.startswith("ExecStart=") and "near_kickoff_capture" in l)
-    for b in ("Epicbet", "Unibet-Site", "Tonybet"):
+    for b in ("Epicbet", "Unibet-Site", "Tonybet", "Optibet"):
         assert b in books_line, f"{b} missing from the VPS near-kickoff close"
     # Coolbet may be OUT only while an Imperva flag is being waited out, and then
     # the unit must say so (COOLBET-IMPERVA-FLAG-2026-09-23) — never silently.
@@ -49895,7 +49895,7 @@ def test_coolbet_event_map_from_run_bulk():
     assert "mapped.append(" in src and "not dry_run" in src, (
         "pairings must be collected per matched fixture and never written on a dry run")
 
-@test("OPTIBET-SWEEPER — market mapping by type+title, squad naming, shared guards, collection-only fences")
+@test("OPTIBET-SWEEPER — market mapping by type+title, squad naming, shared guards, scheduled collection-only")
 def test_optibet_sweeper():
     """#101 (2026-09-26). workers/automation/optibet_feed.py reads Optibet's own sportsbook
     backend (ensb-trading.optibet.ee) — groups → multi-group listing → multi-event boards.
@@ -49904,9 +49904,9 @@ def test_optibet_sweeper():
     handicap is stored as asian_handicap on the HOME line with Tonybet's 1.25–4.0 band;
     (3) bracket qualifiers become the squad guard's tags, youth is refused; (4) rows go
     through the shared writer (O/U label + board_guard + mirror_guard) and pairings to
-    book_event_map; (5) COLLECTION ONLY — not placeable, not scheduled while the VPS exits
-    are blocked (403 page from Optibet on 2026-09-26). Enabling the job is the owner's call:
-    update (5) in the same commit."""
+    book_event_map; (5) COLLECTION ONLY — not placeable (needs the owner's account + call);
+    (6) scheduled since 2026-09-26 with the same fences as Tonybet (auto-pause, staleness,
+    board guard, near-kickoff close, /admin/feeds card)."""
     import pathlib
     from workers.automation import optibet_feed as ob
     from workers.automation.epicbet_explorer import _squad_tag
@@ -49963,11 +49963,24 @@ def test_optibet_sweeper():
     pipe = (root / "workers/jobs/daily_pipeline_v2.py").read_text()
     acc = pipe[pipe.index("ACCESSIBLE_BOOKMAKERS: frozenset"): pipe.index("PRICE_REFERENCE_BOOKMAKERS")]
     assert '"Optibet"' not in acc, "Optibet is collection-only until the owner makes it placeable"
+    # (6) LIVE since 2026-09-26 (owner: "finish optibet"): the 403 was the bare Hetzner IP only;
+    # through the Estonian exit /groups answers 200. Scheduled, on the Feeds page, auto-paused on
+    # repeated failure, watched for staleness, judged by the board guard, closes captured.
     sched = (root / "workers/scheduler.py").read_text()
-    assert 'id="optibet_odds_snapshot"' not in sched, (
-        "the Optibet sweep is not scheduled: both VPS exits get Optibet's 403 block page "
-        "(2026-09-26). Scheduling it is the owner's decision — update this pin when it is made")
-    return "type+title mapping, AH home line, squad tags, shared guards, collection-only"
+    assert 'id="optibet_odds_snapshot"' in sched and '"_optibet_odds_snapshot_wrapper", 30)' in sched
+    from workers.registry.feed_registry import FEEDS_BY_ID, COVERAGE_BOOKS
+    assert FEEDS_BY_ID["optibet_prematch"].get("auto_pause") and "Optibet" in COVERAGE_BOOKS
+    from workers.jobs.health_alerts import DIRECT_FEED_BOOKS
+    from workers.utils.board_guard import DIRECT_BOOKS
+    assert "Optibet" in DIRECT_FEED_BOOKS and "Optibet" in DIRECT_BOOKS
+    from workers.jobs import near_kickoff_capture as nk
+    assert "Optibet" in nk.BOOKS and "Optibet" in nk._CAPTURE
+    unit = (root / "deploy/vps/oddsintel-near-kickoff-epicbet.service").read_text()
+    assert "Optibet" in unit, "the near-kickoff timer must pass Optibet in --books"
+    web = root.parent / "odds-intel-web/src/lib/admin-feeds-model.ts"
+    if web.exists():
+        assert 'main: "optibet_prematch"' in web.read_text(), "Optibet card missing from /admin/feeds"
+    return "type+title mapping, AH home line, squad tags, shared guards, scheduled collection-only"
 
 
 @test("TONYBET-SWEEPER — market mapping, squad naming, flip guard, and the fences around a new book")
@@ -50271,7 +50284,7 @@ def test_feed_auto_pause():
         fc.execute_query, fc.execute_write, fc._notify = orig_q, orig_w, orig_n
 
     from workers.registry.feed_registry import FEEDS_BY_ID
-    for fid in ("coolbet_prematch", "epicbet_prematch", "unibet_prematch", "tonybet_prematch"):
+    for fid in ("coolbet_prematch", "epicbet_prematch", "unibet_prematch", "tonybet_prematch", "optibet_prematch"):
         assert FEEDS_BY_ID[fid].get("auto_pause"), f"{fid} lost auto_pause"
     import pathlib
     assert (pathlib.Path(__file__).parent.parent / "supabase/migrations/391_feed_auto_pause.sql").exists()

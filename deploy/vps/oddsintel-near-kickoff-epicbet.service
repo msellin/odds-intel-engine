@@ -60,4 +60,4 @@ Environment=EPICBET_FLARE_SESSION=epicbet_nearko_reader
 # board sweep's refresh-by-kickoff cut it from ~230 to ~70 requests per sweep (~140/h of a 500
 # cap). Without the close capture Coolbet's last pre-kickoff quote was 239 min old at p90 (every
 # AF book ~5) — the own-book CLV at the book we bet at was stale.
-ExecStart=/opt/odds-intel-engine/venv/bin/python -m workers.jobs.near_kickoff_capture --books Epicbet,Unibet-Site,Tonybet,Coolbet
+ExecStart=/opt/odds-intel-engine/venv/bin/python -m workers.jobs.near_kickoff_capture --books Epicbet,Unibet-Site,Tonybet,Coolbet,Optibet

@@ -91,7 +91,8 @@ _NOT_PEERS = ("Max", "Avg", "Betfair Exchange", "BetWin", "Betfred", "Unibet",
 # * Books we scrape OURSELVES, each with its own matcher. When one of them independently
 #   agrees with the judged board, the board is corroborated, not wrong: on de810545
 #   Epicbet and Unibet-Site moved together on real news while the AF books sat frozen.
-DIRECT_BOOKS = frozenset({"Coolbet", "Epicbet", "Unibet-Site", "Tonybet"})
+# Optibet joined 2026-09-26 (#101): its own matcher, its own trading — judged and a corroborator.
+DIRECT_BOOKS = frozenset({"Coolbet", "Epicbet", "Unibet-Site", "Tonybet", "Optibet"})
 # * Pinnacle is the reference line; it is never itself judged by a soft-book median.
 NEVER_JUDGED = frozenset({"Pinnacle"})
 PEER_MAX_AGE_H = 6        # a peer quote older than this is not evidence about now

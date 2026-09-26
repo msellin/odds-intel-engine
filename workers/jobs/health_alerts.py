@@ -829,8 +829,8 @@ def _notify_telegram(text: str, dedup_key: str) -> None:
 # does not cry wolf; and it would have fired ~2h into the Coolbet outage instead
 # of never, and ~2h into Unibet-Site's instead of twenty hours later.
 # Tonybet added 2026-09-23 (#101) — same 30-minute cron shape, so the same
-# 120-minute threshold applies.
-DIRECT_FEED_BOOKS = ("Coolbet", "Unibet-Site", "Epicbet", "Tonybet")
+# 120-minute threshold applies. Optibet added 2026-09-26 (#101), same shape.
+DIRECT_FEED_BOOKS = ("Coolbet", "Unibet-Site", "Epicbet", "Tonybet", "Optibet")
 DIRECT_FEED_STALE_AFTER_MIN = 120
 
 
