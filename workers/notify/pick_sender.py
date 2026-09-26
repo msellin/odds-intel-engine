@@ -107,6 +107,20 @@ def _distribution_block(channel: str, bot: str, ev=None) -> Optional[str]:
     return None
 
 
+def _status_row(bot: str) -> dict:
+    """[[#183]] The bot's status + public name for the status line. {} when unreadable — the pick
+    then goes out with a neutral line (the send itself was already allowed by the checks above;
+    losing a LABEL must not mute customers)."""
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            "SELECT status, display_name FROM bot_distribution WHERE bot_name = %s", (bot,))
+        return rows[0] if rows else {}
+    except Exception as e:  # noqa: BLE001
+        log.warning("send_pick: status line unreadable for %s: %s", bot, e)
+        return {}
+
+
 _UPSERT = """
     INSERT INTO pick_sends (channel, bot_name, pick_table, pick_id, match_id, market, selection,
                             status, reason)
@@ -218,6 +232,13 @@ def send_pick(channel: str, bot: str, pick_table: str, pick_id, text: str, *,
     if claim == [] or (claim is None and key in _FALLBACK_SENT):
         return PickSend("skipped", reason="duplicate: already sent to this channel")
 
+    if channel == CHANNEL_PUBLIC:
+        # [[#183]] every public pick opens with its bot's STATUS + name, stamped HERE so no caller
+        # can post an unlabelled pick (owner 2026-09-26: readers could not tell proven picks from
+        # trials; the channel description explains the two words).
+        from workers.utils.bot_status import public_status_line
+        row = _status_row(bot)
+        text = public_status_line(row.get("status"), row.get("display_name")) + text
     message_id, recipients = _deliver(channel, text, silent, reply_markup)
     ok = (message_id is not None) if channel != CHANNEL_VIP_DM else bool(recipients)
     status = "sent" if ok else "failed"

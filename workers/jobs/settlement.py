@@ -3376,8 +3376,12 @@ def write_dashboard_cache():
                 DATE(l.pick_time) AS d,
                 ROUND(SUM(l.pnl_unit_public * {PUBLIC_FLAT_STAKE_EUR})::numeric, 2) AS daily_pnl
             FROM bot_ledger l
-            JOIN bots b ON b.id = l.bot_id
-            WHERE l.source = 'sim' AND l.in_record
+            JOIN bots b ON b.name = l.bot_name   -- forward_test rows carry no bot_id
+            -- [[#183]] 'forward_test' too: an ACTIVE forward-test bot (bot_sharp_1x2_v1) counts in
+            -- the headline like any other ACTIVE bot; its legs live in picks_forward_test, not
+            -- simulated_bets. Same cohort + source set as the web hero (bot-performance.ts
+            -- HEADLINE_SOURCES), so the curve and the hero cannot disagree.
+            WHERE l.source IN ('sim', 'forward_test') AND l.in_record
               AND l.result IN ('won','lost')
               AND b.is_active = true AND b.retired_at IS NULL
               AND {_HEADLINE_BOT_SQL}   -- [[#155]] headline cohort

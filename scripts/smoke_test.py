@@ -49810,9 +49810,10 @@ def test_consensus_split_by_grade():
         "picks_public_all must route grade C to its own bot")
     assert "GROUP BY rule_version, arm, grade" in mig, (
         "the summary must separate grades, or /performance pools B and C")
-    # [[#162]] W5.6: the status word is read from the bot's status now (B moved to TESTING in #155).
-    assert "<i>beta</i>" in pf._grade_line({"grade": "B", "grade_reasons": []}, status="beta")
-    assert "<i>testing</i>" in pf._grade_line({"grade": "C", "grade_reasons": ["tier0"]}, status="testing")
+    # [[#183]] the status word left the grade line — it is the first line of every public pick now
+    # (pick_sender.send_pick, smoke TELEGRAM-STATUS-LINE), so the grade line carries the grade only.
+    assert "<i>" not in pf._grade_line({"grade": "B", "grade_reasons": []}, status="beta")
+    assert "<i>" not in pf._grade_line({"grade": "C", "grade_reasons": ["tier0"]}, status="testing")
 
 
 @test("CONSENSUS-ARM-GRADING — every consensus pick carries a B/C grade; a label, never a gate")
@@ -56240,7 +56241,10 @@ def test_one_status_decides_distribution():
     by = {r["name"]: r["label"] for r in rows}
     if any(by.get(k) in ("CALIBRATED", "BETA") for k in by):
         return "migration 462 not applied yet (BETA/CALIBRATED labels still live; source checks passed)"
-    want = {"bot_v10_1x2": "ACTIVE", "bot_high_roi_global_v2": "ACTIVE", "bot_sharp_1x2_v1": "TESTING",
+    if by.get("bot_sharp_1x2_v1") == "TESTING":
+        return "migration 472 not applied yet (bot_sharp_1x2_v1 still TESTING; source checks passed)"
+    # [[#183]] bot_sharp_1x2_v1 promoted TESTING -> ACTIVE (owner 2026-09-26, migration 472).
+    want = {"bot_v10_1x2": "ACTIVE", "bot_high_roi_global_v2": "ACTIVE", "bot_sharp_1x2_v1": "ACTIVE",
             "bot_sharp_ou_v1": "TESTING", "bot_consensus_c_v1": "TESTING", "bot_consensus_b_v1": "TESTING",
             "bot_consensus_d_v1": "EXPERIMENTAL", "bot_combined_1x2_ev5_v1": "VIP · TESTING",
             "bot_ou_sharp_early_v1": "VIP · TESTING", "bot_v10_1x2_newplus_v1": "TESTING"}
@@ -56685,24 +56689,62 @@ def test_vip1_exact_rule_one_per_match():
         if cc.get("one_per_match") and cc.get("is_active", True) and n in rv:
             assert rv[n] != "r1", f"{n}'s rule changed (W7.8) — its rule_version must be bumped"
 
+@test("TELEGRAM-STATUS-LINE — every public Telegram pick opens with its bot's status + name (#183)")
+def test_telegram_status_line():
+    """[[#183]] (owner 2026-09-26): the channel mixed ACTIVE and TESTING picks from five methods with no
+    way to tell them apart (model O/U posts carried no label). The status line is stamped in ONE place
+    — pick_sender.send_pick for CHANNEL_PUBLIC — from bot_distribution, so no caller can skip it."""
+    import inspect
+    from workers.notify import pick_sender as ps
+    from workers.utils.bot_status import public_status_line
+    assert public_status_line("active", "Sharp-line picks — 1x2") == "🟢 <b>ACTIVE</b> · Sharp-line picks — 1x2\n"
+    assert public_status_line("testing", "Goals over/under — new model").startswith("🧪 <b>TESTING</b> · ")
+    assert public_status_line(None, "X") == "X\n", "unknown status → name only, never a guessed word"
+    assert public_status_line("active", "a<b") .endswith("a&lt;b\n"), "names are HTML-escaped"
+    assert public_status_line(None, None) == ""
+    src = inspect.getsource(ps.send_pick)
+    assert "public_status_line(" in src and "CHANNEL_PUBLIC" in src, "send_pick must stamp the status line"
+    assert src.index("public_status_line(") < src.index("_deliver("), "stamped BEFORE delivery"
+    assert "display_name" in inspect.getsource(ps._status_row)
+
+
+@test("HEADLINE-INCLUDES-FORWARD-TEST — an ACTIVE forward-test bot counts in the totals (#183)")
+def test_headline_includes_forward_test():
+    """[[#183]] bot_sharp_1x2_v1 became ACTIVE 2026-09-26, but its legs live in picks_forward_test
+    (bot_ledger source 'forward_test'); every headline read filtered source = 'sim', so promotion
+    alone would have changed nothing in the totals. Hero, track-record API and the P&L curve now read
+    both sources; 'shadow' never."""
+    import pathlib as _pl
+    eng = (_pl.Path(__file__).resolve().parent.parent / "workers/jobs/settlement.py").read_text()
+    assert "l.source IN ('sim', 'forward_test')" in eng, "daily_pnl_curve must include forward_test legs"
+    assert "JOIN bots b ON b.name = l.bot_name" in eng, "forward_test ledger rows carry no bot_id"
+    web = _pl.Path(__file__).resolve().parent.parent.parent / "odds-intel-web"
+    if not web.exists():
+        return "web repo not checked out — engine half checked"
+    bp = (web / "src/lib/bot-performance.ts").read_text()
+    assert 'HEADLINE_SOURCES = ["sim", "forward_test"]' in bp
+    assert '.eq("source", "sim")' not in bp, "no headline read may be sim-only"
+    tr = (web / "src/app/api/v1/track-record/route.ts").read_text()
+    assert 'eq("source", "forward_test")' in tr and "LEDGER_BACKED_BOTS" in tr, (
+        "the track-record list must carry the forward-test legs meta.roi_pct now sums")
+
+
 @test("STATUS-WORDS-FROM-STATUS-FIELD — a pick's status word is read from bots, never typed (#162 W5.6)")
 def test_status_words_from_status_field():
     """[[#162]] W5.6 (audit B-R6). The consensus grade line said "B · beta / C · testing" as literals on
     /picks AND in the Telegram post; #155 moved bot_consensus_b_v1 to TESTING and both kept telling
-    readers "beta". Now both read the bot's status; an unreadable status prints no word at all."""
+    readers "beta". [[#183]] (2026-09-26): the Telegram status word moved OUT of the grade line into
+    the status line pick_sender stamps on every public pick, read from bot_distribution — so the grade
+    line must carry no status word at all, and /picks still reads the status (never types it)."""
     import inspect
     import pathlib as _pl
     import scripts.publish_picks_forward_test as pf
     src = inspect.getsource(pf._grade_line)
     assert "<i>beta</i>" not in src and "<i>testing</i>" not in src, "no hard-coded status words"
-    assert pf._grade_line({"grade": "B"}, status="") == "🟢 Grade <b>B</b> — strongest\n", "no status → no word"
+    assert pf._grade_line({"grade": "B"}, status="") == "◆ Grade <b>B</b> — strongest\n"
+    assert pf._grade_line({"grade": "C"}, status="testing") == "◇ Grade <b>C</b> — standard\n", (
+        "the status word is the status line's job now (#183) — never repeated in the grade line")
     assert pf.GRADE_BOTS["B"] == "bot_consensus_b_v1" and pf.GRADE_BOTS["C"] == "bot_consensus_c_v1"
-    from workers.api_clients.db import execute_query
-    from workers.utils.bot_status import status_of
-    r = execute_query("SELECT maturity_label, retired_at, is_active FROM bots WHERE name = 'bot_consensus_b_v1'")
-    if r:
-        word = status_of(r[0]["maturity_label"], r[0]["retired_at"], r[0]["is_active"])
-        assert f"<i>{word}</i>" in pf._grade_line({"grade": "B"}), "the default path must print the DB status"
     web = _pl.Path(__file__).resolve().parent.parent.parent / "odds-intel-web"
     if web.exists():
         page = (web / "src/app/picks/page.tsx").read_text()

@@ -205,34 +205,23 @@ def grade_consensus_pick(edge: float, odds: float, bookmaker: str,
 GRADE_BOTS = {"B": "bot_consensus_b_v1", "C": "bot_consensus_c_v1", "D": "bot_consensus_d_v1"}
 
 
-def _status_word(bot: str) -> str | None:
-    """[[#162]] W5.6: the bot's CURRENT status word, read from `bots` (the one status field,
-    [[#155]]). None when unreadable — the caller then prints no status rather than a wrong one."""
-    try:
-        from workers.api_clients.db import execute_query
-        from workers.utils.bot_status import status_of
-        r = execute_query("SELECT maturity_label, retired_at, is_active FROM bots WHERE name = %s", [bot])
-        return status_of(r[0]["maturity_label"], r[0]["retired_at"], r[0]["is_active"]) if r else None
-    except Exception:  # noqa: BLE001
-        return None
-
-
 def _grade_line(c: dict, status: str | None = None) -> str:
     """The reader-facing grade. Empty for ungraded (live-arm) picks.
 
-    Since [[#095]] each grade is its own tracked bot, so the line names the bot's status as well as
-    the grade: a reader seeing a pick on trial knows it is scored separately. [[#162]] W5.6: the word
-    is READ from the bot's status (it was hard-coded "B beta / C testing", and went false when #155
-    moved bot_consensus_b_v1 to TESTING). `status` overrides the lookup (tests)."""
+    Since [[#095]] each grade is its own tracked bot. The bot's STATUS used to be appended here
+    ([[#162]] W5.6, read from `bots`); since [[#183]] it is the first line of every public pick,
+    stamped by pick_sender.send_pick, so this line carries the grade only."""
     grade = c.get("grade")
     if not grade:
         return ""
     if grade in ("B", "C"):
-        word = status if status is not None else _status_word(GRADE_BOTS[grade])
-        tail = f" · <i>{word}</i>" if word else ""
+        # [[#183]] the status word moved to the status line pick_sender stamps on EVERY public
+        # pick ("🧪 TESTING · Consensus picks — grade C"), so it is no longer repeated here; the
+        # grade's own emoji is ◆ so it cannot be read as the status line's 🟢 ACTIVE.
+        # `status` is kept in the signature for callers/tests; it no longer changes the line.
         if grade == "B":
-            return f"🟢 Grade <b>B</b> — strongest{tail}\n"
-        return f"🔵 Grade <b>C</b> — standard{tail}\n"
+            return "◆ Grade <b>B</b> — strongest\n"
+        return "◇ Grade <b>C</b> — standard\n"
     why, dissent = [], []
     for r in c.get("grade_reasons") or []:
         if r.startswith("panel:"):

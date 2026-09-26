@@ -78,6 +78,29 @@ def forward_test_bot(arm: str, market: str | None, grade: str | None) -> str:
     return "bot_sharp_1x2_v1"
 
 
+# ── THE STATUS LINE ON EVERY PUBLIC TELEGRAM PICK ([[#183]], owner 2026-09-26) ───────────────────
+# The channel mixed ACTIVE (proven, in the totals) and TESTING (on trial) picks from five methods
+# with no way to tell them apart — model O/U picks carried no label at all. Every public pick now
+# opens with ONE line: the status word + the bot's public name (the same name as its /performance
+# row, so a reader can look up its record). Stamped inside pick_sender.send_pick — no caller can
+# skip it. The channel description explains the two words. The consensus B/C grade stays as a
+# second line: it grades picks WITHIN one method; the status grades the METHOD's evidence.
+PUBLIC_STATUS_BADGE = {
+    "active": "🟢 <b>ACTIVE</b>",
+    "testing": "🧪 <b>TESTING</b>",
+}
+
+
+def public_status_line(status: str | None, display_name: str | None) -> str:
+    """First line of a public Telegram pick, e.g. '🟢 <b>ACTIVE</b> · Sharp-line picks — 1x2'.
+    An unknown/unreadable status prints the name only (never a guessed status word)."""
+    import html
+    badge = PUBLIC_STATUS_BADGE.get((status or "").lower())
+    name = html.escape(display_name) if display_name else None
+    parts = [x for x in (badge, name) if x]
+    return (" · ".join(parts) + "\n") if parts else ""
+
+
 # ── THE PUBLIC TELEGRAM CHANNEL RULE ([[#174]], owner decision 2026-09-26) ─────────────────────
 # /picks shows EVERY pick of a TESTING / ACTIVE bot (unchanged). The public Telegram
 # channel is a stricter subset, so each post feels special:

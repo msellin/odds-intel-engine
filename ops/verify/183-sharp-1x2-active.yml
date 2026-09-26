@@ -1,0 +1,27 @@
+# #183 — bot_sharp_1x2_v1 TESTING -> ACTIVE (migration 472) + status line on every public Telegram pick.
+task: "#183"
+checks:
+  - name: migration_472_applied
+    mode: eventually
+    sql: SELECT count(*) FROM _schema_migrations WHERE filename LIKE '472_sharp_1x2_active%'
+    expect: "== 1"
+    expires: "2026-09-27T12:00:00Z"
+  - name: sharp_1x2_active_in_headline
+    mode: eventually
+    sql: SELECT count(*) FROM bot_distribution WHERE bot_name = 'bot_sharp_1x2_v1' AND status = 'active' AND in_headline AND sent_public
+    expect: "== 1"
+    expires: "2026-09-27T12:00:00Z"
+  - name: sharp_1x2_picks_reach_telegram_without_ev5_filter
+    mode: eventually
+    sql: |
+      SELECT count(*) FROM pick_sends WHERE channel = 'public' AND bot_name = 'bot_sharp_1x2_v1'
+         AND status = 'sent' AND sent_at > '2026-09-26 18:00+00'
+    expect: ">= 1"
+    expires: "2026-09-29T00:00:00Z"
+  - name: no_sharp_1x2_ev5_skips_after_promotion
+    mode: invariant
+    sql: |
+      SELECT count(*) FROM pick_sends WHERE channel = 'public' AND bot_name = 'bot_sharp_1x2_v1'
+         AND reason LIKE 'testing_%' AND attempted_at > '2026-09-26 20:00+00'
+    expect: "== 0"
+    expires: "2026-10-10T00:00:00Z"

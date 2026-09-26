@@ -325,7 +325,7 @@ keep their record and carry `vip_rule_breach = true` (never deleted, never unsen
 | Bot | Market | Anchor | Edge floor | Odds | Money | What it does |
 |---|---|---|---|---|---|---|
 | ~~`bot_sharp_forward_test_v1`~~ **RETIRED 2026-09-24 — split by market into the two rows below ([[#122]], migration 402); same rule, same pre-registered test** | 1x2 + O/U 2.5 | **sharp** | **3%** (multiplicative) | **cap 4.0** | published, not staked | **The picks readers actually see.** `P_shin × best_book_price − 1 ≥ 3%`, odds ≤ 4.0, anchor and bet quote within 60 min. **No daily selection cap** — `TOP_N = 8` was dropped 2026-09-15 (PICKS-NO-DAILY-CAP, owner: *"if possible lets not cap daily picks at all"*); a 60/day runaway breaker is all that remains — **per arm since 2026-09-26** (it was shared with the consensus arm, whose 58 picks on Saturday 09-26 tripped it and blocked this pre-registered arm for the rest of the day). **No model output at all.** Flat 1 unit, no Kelly, no bankroll. |
-| `bot_sharp_1x2_v1` | 1x2 | **sharp** | **3%** (multiplicative) | **cap 4.0** | published, not staked | **The 1x2 half of the sharp picks** — owns `picks_forward_test` rows with arm='live' AND market='1x2'. clv_sharp +2.27% (n=70) at the split. |
+| `bot_sharp_1x2_v1` | 1x2 | **sharp** | **3%** (multiplicative) | **cap 4.0** | published, not staked | **The 1x2 half of the sharp picks** — owns `picks_forward_test` rows with arm='live' AND market='1x2'. clv_sharp +2.27% (n=70) at the split. **ACTIVE since 2026-09-26 ([[#183]], migration 472)** — counts in the headline totals (hero, track-record API and P&L curve read `bot_ledger` source `forward_test` as well as `sim`), every pick to Telegram. Still not staked; the pre-registered rule is unchanged. |
 | `bot_sharp_ou_v1` | O/U 2.5 | **sharp** | **3%** (multiplicative) | **cap 4.0** | published, not staked | **The O/U 2.5 half of the sharp picks** — arm='live' AND market='over_under_25'. clv_sharp +0.67% (n=22) at the split. Retirement trigger: clv_sharp CI entirely below 0 at n ≥ 100. |
 | ~~`bot_consensus_anchor_v1`~~ **RETIRED 2026-09-23 — split by grade into the two rows below ([[#095]], migration 380)** | 1x2 + O/U 2.5 | **sharp (consensus)** | **3%, ceiling 8%** | cap 4.0 | published, not staked | **The SECOND published arm ([[#068]], 2026-09-22).** Identical rule to the row above in every guard — 3% floor, 60-min alignment, cap 4.0, ratio 0.20, 45-min lead, 14h lookahead — differing in exactly ONE variable: fair value is a **de-vigged consensus of ≥5 bookmakers** instead of a single sharp line. **Why it exists:** the sharp arm's pre-registered ≤4% anchor-overround gate admitted **0 of 173** Pinnacle-priced markets on 2026-09-22 and the channel went dark for two days. That gate is pre-registered, so it was NOT relaxed — this runs beside it and the sharp arm stays byte-identical. **Why a consensus is a legitimate anchor** (measured, n=11,419 matches / 45d): a consensus EXCLUDING our AF-"Pinnacle" predicts as well as that feed (log-loss 0.98339 vs 0.98401, t=+1.76), while the feed's median closing overround is 10.24% against those books' 7.95% — wider than the books it is supposed to be sharper than. **The 8% CEILING is not optional** and the sharp arm must never gain one: `edge = p·odds−1` is maximised by a WRONG price, and 5 of the first 15 qualifying legs cleared 8% against a 7–11 book consensus. **Reported SEPARATELY** on /performance — two rules, two records; pooling them would describe neither. Ledger: `picks_forward_test` WHERE `arm='consensus_anchor'`. **GRADED B/C since 2026-09-23 ([[#094]])** — C = tier-0 league, OR another of Pinnacle/Marathonbet/Betfair/1xBet/SBO sees no edge at the published price, OR edge > 6%. On a 56-day replay (n=677) C returned −25.6% and B +10.6% (B's holdout −3.4%, so B is not proven). **A label, not a gate:** every pick still publishes with its grade on the Telegram message; `grade`/`grade_reasons` columns (migration 379) let the arm be split into two bots later. Evidence: `docs/PUBLISHED_PICKS_GRADING_2026_09_23.md`. |
 | `bot_consensus_b_v1` | 1x2 + O/U 2.5 | **sharp (consensus)** | 3% under every credible de-vig (v2), ceiling 6% | **1.20–1.60** | published, not staked | **Grade B — STRONGEST, `testing`** (owner #155 2026-09-25: was `beta`; re-tiered 2026-09-23, [[#098]], migration 381 — the letters shifted DOWN; grade A is reserved for model picks). Every [[#094]] check passes AND odds 1.20–1.60. The only rule positive in all three samples: ours 56 d +17.8% (48), unseen May–Jul +14.7% (29), Beat the Bookie 2015–16 +9.8% (696, Holm p<1e-4); mechanism = favourite-longshot bias. ~1/day. Ledger: `grade='B'`. **Split in the views, not the ledger** — one arm keeps the `(match, market, selection, arm)` de-dupe when a grade flips between runs. |
@@ -750,6 +750,15 @@ for model bots, `p_sharp × odds` = `edge` for forward-test arms), never VIP-hel
 recorded in `pick_sends` as `skipped · testing_below_ev5`. /picks is unchanged. The Coolbet real-money edge floors are
 NOT on this path (placement + operator prompt only). Smoke `PUBLIC-TELEGRAM-ONE-RULE-EV5`.
 
+**Status line on every public pick ([[#183]], owner 2026-09-26):** the channel mixed ACTIVE and TESTING picks from
+five methods and readers could not tell them apart (model O/U picks carried no label at all). Every public pick
+now OPENS with `🟢 ACTIVE · <display name>` or `🧪 TESTING · <display name>` — the bot's status plus the same name
+as its /performance row. Stamped in ONE place, `pick_sender.send_pick` (CHANNEL_PUBLIC), from
+`bot_distribution`, via `bot_status.public_status_line`, so no caller can post an unlabelled pick. The consensus
+B/C grade stays as its own line (◆ B / ◇ C — it grades picks WITHIN one method; the status grades the METHOD'S
+evidence), and no longer repeats the status word. The channel description (set by the owner in Telegram) explains
+the two words. Smoke `TELEGRAM-STATUS-LINE`.
+
 **Real money is NOT a status** — it is the per-bot € switch on /admin/bots (`coolbet_placer_bots`).
 **Anything sent is counted** — a pick that reached the channel stays in the record after a demotion
 (`picks_public_all` keeps rows with a `telegram_message_id`).
@@ -800,9 +809,10 @@ audit must never mute customers); a `sending` row left by a crash mid-send is tr
 forward test still writes `picks_forward_test.telegram_message_id` (public surfaces read it); the
 pre-registered selection rule is untouched. Smoke `ONE-AUDITED-PICK-SENDER`.
 
-**Current statuses (owner 2026-09-25, migration 442; merged 2026-09-26, migration 462):** `bot_v10_1x2` ACTIVE ·
-`bot_high_roi_global_v2` ACTIVE · `bot_sharp_1x2_v1`, `bot_sharp_ou_v1`, `bot_consensus_b_v1`, `bot_consensus_c_v1`,
-`bot_v10_1x2_newplus_v1` TESTING · `bot_combined_1x2_ev5_v1`, `bot_ou_sharp_early_v1` VIP · TESTING ·
+**Current statuses (owner 2026-09-25, migration 442; merged 2026-09-26, migration 462; [[#183]] migration 472):** `bot_v10_1x2` ACTIVE ·
+`bot_high_roi_global_v2` ACTIVE · **`bot_sharp_1x2_v1` ACTIVE since 2026-09-26** (first bot promoted under the 50-settled rule:
+n 68, sharp-anchor CLV +2.19% [+1.0, +3.3], +4.4pp over the junk control; independent ≥5-book close +1.1% [−0.05, +2.3]) ·
+`bot_sharp_ou_v1`, `bot_consensus_b_v1`, `bot_consensus_c_v1`, `bot_v10_1x2_newplus_v1`, `bot_v10_ou_comb_v1` TESTING · `bot_combined_1x2_ev5_v1`, `bot_ou_sharp_early_v1` VIP · TESTING ·
 `bot_consensus_d_v1` and every other active bot EXPERIMENTAL.
 
 ### Promotion and review — written rules
