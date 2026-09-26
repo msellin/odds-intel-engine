@@ -10,6 +10,8 @@ Exit code 0 = all pass, 1 = any failure.
 """
 
 import contextlib
+import inspect
+import re
 import sys
 import os
 import threading
@@ -11788,6 +11790,19 @@ def _run_one(name: str, fn) -> tuple[str, str, str, float]:
         return (name, "fail", f"{type(e).__name__}: {e}", time.monotonic() - t)
 
 
+_PATCH_SHARED_DB = re.compile(
+    r"\b\w+\.(execute_query|execute_write|execute_many|get_conn)\s*=(?!=)"
+    r"|setattr\([^)]*[\"'](execute_query|execute_write|execute_many|get_conn)[\"']")
+
+
+def _patches_shared_db(fn) -> bool:
+    """True when a test replaces a shared DB function in place (see SMOKE-PATCHERS-RUN-ALONE)."""
+    try:
+        return bool(_PATCH_SHARED_DB.search(inspect.getsource(fn)))
+    except (OSError, TypeError):
+        return False
+
+
 def main():
     import time, argparse
     parser = argparse.ArgumentParser(description="OddsIntel smoke tests")
@@ -11840,9 +11855,18 @@ def main():
 
     t0 = time.monotonic()
 
+    # SMOKE-PATCHERS-RUN-ALONE (2026-09-26): 18 tests stub a SHARED DB function in place
+    # (`<module>.execute_query = lambda …`). Under the 8-thread pool that stub is visible to
+    # whichever test runs beside it, which then fails with "no results to fetch" /
+    # "'NoneType' object is not subscriptable" — SETTLEMENT-POSTPONED-VOID and
+    # VIP-FIRST-HOLD-BACK flickered red in CI this way while passing alone. Patchers now run
+    # one at a time AFTER the parallel phase, so no stub ever overlaps another test.
+    patchers = [(n, f) for (n, f) in registry if _patches_shared_db(f)]
+    parallel = [(n, f) for (n, f) in registry if not _patches_shared_db(f)]
     with ThreadPoolExecutor(max_workers=8) as pool:
-        futures = {pool.submit(_run_one, name, fn): name for name, fn in registry}
+        futures = {pool.submit(_run_one, name, fn): name for name, fn in parallel}
         results = [f.result() for f in as_completed(futures)]
+    results += [_run_one(name, fn) for name, fn in patchers]
 
     elapsed = time.monotonic() - t0
 
@@ -56961,16 +56985,15 @@ def test_coolbet_model_price_guard():
     for m in ("over_under_15", "over_under_25", "over_under_35"):
         assert pg._OWN_OUTLIER_MULT[m] == 1.15, m
     assert pg._OWN_OUTLIER_MULT["1x2"] == 1.25
-    # the guard's arithmetic, anchor stubbed: 2.30 vs Pinnacle 2.00 (x1.15) passes, 2.31 is refused
-    import workers.api_clients.db as _db
-    real = _db.execute_query
-    try:
-        _db.execute_query = lambda *a, **k: [{"bookmaker": "Pinnacle", "odds": 2.00}]
-        assert pg._own_outlier_ok("m", "over_under_25", "over", 2.30) == (True, "")
-        assert pg._own_outlier_ok("m", "over_under_25", "over", 2.31) == (False, "above_own_outlier")
-        assert pg._own_outlier_ok("m", "1x2", "home", 2.45) == (True, "")
-    finally:
-        _db.execute_query = real
+    # the guard's arithmetic on its pure half (no module patching — the suite is threaded):
+    # 2.30 vs Pinnacle 2.00 at x1.15 passes, 2.31 is refused; no Pinnacle + < 3 Estonian books refuses
+    v, M = pg._own_outlier_verdict, pg._OWN_OUTLIER_MULT
+    acc = {"Coolbet", "Unibet-Site", "Epicbet", "Tonybet"}
+    assert v({"Pinnacle": 2.00}, M["over_under_25"], 2.30, acc) == (True, "")
+    assert v({"Pinnacle": 2.00}, M["over_under_25"], 2.31, acc) == (False, "above_own_outlier")
+    assert v({"Pinnacle": 2.00}, M["1x2"], 2.45, acc) == (True, "")
+    assert v({"Coolbet": 2.0, "Epicbet": 2.1}, M["over_under_25"], 2.0, acc) == (False, "no_own_anchor")
+    assert v({"Coolbet": 2.0, "Epicbet": 2.1, "Tonybet": 2.2}, M["over_under_25"], 2.40, acc) == (True, "")
     # every model-anchored Coolbet bot runs through generate() (sharp ones through the sharp engine,
     # which has its own anchor guard) — no second writer for these bots
     from workers.automation.bot_configs import ALL_CONFIGS as cfgs
@@ -57027,6 +57050,26 @@ def test_pre_commit_fast_checks():
     assert "TASK-NUMBERS-STABLE" in src and "SINGLE-MASTER-TASK-LIST" in src
     assert "git config core.hooksPath .githooks" in _engine_path("CLAUDE.md").read_text()
     return "hook present, executable, documented"
+
+
+@test("SMOKE-PATCHERS-RUN-ALONE — tests that stub a shared DB function never run beside another test")
+def test_smoke_patchers_run_alone():
+    """2026-09-26: 18 tests replace execute_query / execute_write / get_conn in place; under the
+    8-thread pool the stub leaked into the neighbouring test (SETTLEMENT-POSTPONED-VOID 'no results
+    to fetch', VIP-FIRST-HOLD-BACK NoneType, PLACEMENT-GATE-DB-ELIGIBILITY, MONEY-GATE-READY-LOCK
+    flickering red in CI). main() now runs them serially after the parallel phase."""
+    src = inspect.getsource(main)
+    assert "patchers = [(n, f) for (n, f) in registry if _patches_shared_db(f)]" in src
+    assert "pool.submit(_run_one, name, fn): name for name, fn in parallel" in src
+    assert "results += [_run_one(name, fn) for name, fn in patchers]" in src
+    stub = lambda: None  # noqa: E731
+    def a():
+        import workers.api_clients.db as d
+        d.execute_query = stub
+    def b():
+        return "x.execute_query == y"
+    assert _patches_shared_db(a) and not _patches_shared_db(b)
+    return f"{sum(1 for _, f in _registry if _patches_shared_db(f))} patcher tests run alone"
 
 
 if __name__ == "__main__":

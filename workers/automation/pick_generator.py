@@ -417,7 +417,6 @@ def _own_outlier_ok(match_id: str, market: str, selection: str, price: float) ->
     mult = _OWN_OUTLIER_MULT.get(market)
     if mult is None:
         return True, ""
-    from statistics import median
     from workers.api_clients.db import execute_query
     from workers.jobs.daily_pipeline_v2 import ACCESSIBLE_BOOKMAKERS
     rows = execute_query(
@@ -429,9 +428,17 @@ def _own_outlier_ok(match_id: str, market: str, selection: str, price: float) ->
         (match_id, market, selection, sorted(ACCESSIBLE_BOOKMAKERS | {"Pinnacle"})),
     ) or []
     quotes = {r["bookmaker"]: r["odds"] for r in rows if r["odds"] and r["odds"] > 1}
+    return _own_outlier_verdict(quotes, mult, price, ACCESSIBLE_BOOKMAKERS)
+
+
+def _own_outlier_verdict(quotes: dict, mult: float, price: float, accessible) -> tuple[bool, str]:
+    """Pure half of `_own_outlier_ok` (no DB), so it can be tested without patching a shared
+    module — the smoke suite runs 8 tests in threads, and a patched `execute_query` leaks into
+    whichever test runs beside it."""
+    from statistics import median
     anchor = quotes.get("Pinnacle")
     if anchor is None:
-        acc = [v for b, v in quotes.items() if b in ACCESSIBLE_BOOKMAKERS]
+        acc = [v for b, v in quotes.items() if b in accessible]
         if len(acc) < 3:
             return False, "no_own_anchor"
         anchor = median(acc)
