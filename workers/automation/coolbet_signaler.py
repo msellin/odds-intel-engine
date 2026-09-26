@@ -42,11 +42,21 @@ of OUR OWN staking — the exact opposite of what it should be:
     customer pick with nothing logged as a failure.
 Publishing a pick we staked is if anything MORE warranted, not less.
 
-EDGE GATES: the ONE shared selection-aware floor `min_edge_for_pick`
-(coolbet_placer) — the same utility the placer/daemon use, so the signal set
-and the placement set apply an identical rule and cannot drift. In particular
-1x2 home-underdogs (home, odds>=2.80) gate at 10%, matching the real-money bot,
-so a bet we place also signals (EDGE-FLOOR-ONE-UTILITY-2026-09-10).
+EDGE GATES ([[#174]], owner decision 2026-09-26 — changed): the two sinks now
+use DIFFERENT gates, because they do different jobs.
+  * PUBLIC channel (👥 PICKS) — THE public-Telegram rule
+    `bot_status.public_channel_skip_reason`, shared with the forward-test
+    publisher and re-checked inside `pick_sender.send_pick`: every BETA /
+    CALIBRATED pick, plus TESTING picks at EV >= 5% (calibrated_prob x
+    odds_at_pick - 1). NO Coolbet real-money floor: those floors (13pp 1x2 /
+    8pp O/U) kept every pick of the EV-unit TESTING bots (bot_v10_1x2_newplus_v1,
+    bot_v10_ou_comb_v1) off the channel — 0 of 103 upcoming picks — although
+    their status says they are sent.
+  * OPERATOR manual-placement prompt (🤖 OWN, off by default) — still the ONE
+    shared selection-aware placement floor `clears_edge_floor` /
+    `min_edge_for_pick` (coolbet_placer), computed per candidate as
+    `clears_placement_floor`, so a prompt still only asks for a bet the placer
+    would place (EDGE-FLOOR-ONE-UTILITY-2026-09-10).
 """
 from __future__ import annotations
 
@@ -57,8 +67,9 @@ from datetime import datetime, timezone
 
 from workers.api_clients.db import execute_query, execute_write
 from workers.automation.coolbet_placer import (
-    clears_edge_floor, min_edge_for_pick, model_edge, _MIN_EDGE,
+    clears_edge_floor, model_edge,
 )
+from workers.utils.bot_status import HEADLINE_STATUSES, public_channel_eligible
 from workers.notify.telegram import (
     send_telegram, operator_pick_alerts_enabled,
 )
@@ -81,7 +92,9 @@ log = logging.getLogger(__name__)
 def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
     """Return simulated_bets that should trigger a signal:
       - match hasn't kicked off (+ within next `lookahead_hours`)
-      - edge_percent passes the global floor (per-market floors checked in Python)
+      - [[#174]] NO edge floor in the query: the Coolbet placement floor is computed
+        per row as `clears_placement_floor` and gates ONLY the operator prompt; the
+        public channel applies the public-Telegram rule (is_public_eligible)
       - signaled_at IS NULL (never signaled)
       - NOT filtered on real_bets. Already-placed picks ARE returned, carrying
         `already_placed=True`, because that fact must only suppress the
@@ -119,6 +132,7 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
                  sb.recommended_bookmaker,
                  b.name            AS bot_name,
                  b.maturity_label  AS maturity,
+                 bd.status         AS status,        -- [[#174]] the public-Telegram rule reads it
                  m.date            AS match_date,
                  m.coolbet_match_id AS coolbet_match_id,
                  ht.name           AS home_team,
@@ -165,7 +179,6 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
             AND sb.signaled_at IS NULL
             -- #148 VIP: a paid pick never becomes public-channel content or eligibility.
             AND b.name <> ALL(%s)
-            AND sb.edge_percent >= %s
             AND m.date > NOW()
             AND m.date < NOW() + (%s * INTERVAL '1 hour')
             -- PUBLIC-CHANNEL-DECOUPLED (2026-09-11): this used to be
@@ -181,14 +194,20 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
             -- operator send below.
             AND TRUE
           -- [[#155]] a SENT bot's row supplies the message when one exists, so an
-          -- EXPERIMENTAL bot's price/edge never reaches the public channel; the
-          -- floor is then checked on the pick that is actually published.
-          ORDER BY sb.match_id, sb.market, sb.selection, bd.sent_public DESC, sb.edge_percent DESC
+          -- EXPERIMENTAL bot's price/edge never reaches the public channel.
+          -- [[#174]] then a HEADLINE-status (BETA/CALIBRATED) row, then the highest-EV row: with this order
+          -- the canonical row passes the public-Telegram rule iff ANY row in the group
+          -- does (BETA/CALIBRATED always; TESTING at EV >= 0.05 -> the max-EV row is the
+          -- one to test), so the rule is applied once, in Python, on the row published.
+          ORDER BY sb.match_id, sb.market, sb.selection, bd.sent_public DESC,
+                   (bd.status = ANY(%s)) DESC,      -- bot_status.HEADLINE_STATUSES
+                   (sb.calibrated_prob * sb.odds_at_pick) DESC NULLS LAST,
+                   sb.edge_percent DESC
         ) q
         WHERE NOT q.group_held_back
         ORDER BY q.match_date ASC, q.edge_percent DESC
         """,
-        (sorted(VIP_BOTS), _MIN_EDGE, lookahead_hours),
+        (sorted(VIP_BOTS), lookahead_hours, sorted(HEADLINE_STATUSES)),
     )
     out: list[dict] = []
     for r in rows:
@@ -219,9 +238,16 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
         d["edge_percent"] = model_edge(d.get("odds_at_pick"),
                                        d.get("calibrated_prob"),
                                        d.get("edge_percent"))
-        if not clears_edge_floor(d.get("market"), d.get("selection"),
-                                 d.get("odds_at_pick"), d.get("edge_percent")):
-            continue
+        # [[#174]] the placement floor no longer DROPS the candidate — it is 🤖 OWN and
+        # gates only the operator's manual-placement prompt. The public channel uses the
+        # public-Telegram rule on `ev` below (is_public_eligible).
+        d["clears_placement_floor"] = clears_edge_floor(
+            d.get("market"), d.get("selection"), d.get("odds_at_pick"), d.get("edge_percent"))
+        # EV in the unit the public rule uses: the bot's own probability x the published odds - 1.
+        try:
+            d["ev"] = float(d["calibrated_prob"]) * float(d["odds_at_pick"]) - 1.0
+        except (TypeError, ValueError, KeyError):
+            d["ev"] = None
         out.append(d)
     return out
 
@@ -241,9 +267,16 @@ def is_public_eligible(b: dict) -> bool:
     calibrated" until 2026-09-25, which kept TESTING/BETA bots off the channel
     although their status says they are sent. Group-level, not the canonical
     row's own status (SIGNALER-MATURITY-SHADOWING 2026-08-28).
+
+    [[#174]] (owner 2026-09-26): and the canonical row must pass THE public-Telegram
+    rule (bot_status.public_channel_eligible) — BETA/CALIBRATED always, TESTING only at
+    EV >= 5%. The query orders the group so the canonical row passes iff any row does.
+    No Coolbet placement floor here (that is `clears_placement_floor`, operator only).
     """
     return (bool(b.get("group_sends_public"))
-            and b.get("market") in _PUBLIC_MARKETS)
+            and b.get("market") in _PUBLIC_MARKETS
+            and public_channel_eligible(b.get("status"), b.get("ev"),
+                                        sent_public=bool(b.get("sends_public"))))
 
 
 def _format_signal(b: dict) -> str:
@@ -312,7 +345,9 @@ def _format_signal(b: dict) -> str:
 # Markets eligible for the public Telegram channel. Asian Handicap is
 # excluded because calibrated AH was a known money loser (bot_ah_home_fav
 # retired 2026-06-24). We can re-add AH once a calibrated AH bot returns.
-_PUBLIC_MARKETS = {"1x2", "o/u", "over_under_25", "btts"}
+# [[#174]] + over_under_15 / over_under_35: the O/U twin (bot_v10_ou_comb_v1) trades
+# 1.5 / 2.5 / 3.5; _format_market_public labels each with its own line.
+_PUBLIC_MARKETS = {"1x2", "o/u", "over_under_15", "over_under_25", "over_under_35", "btts"}
 
 
 def _format_market_public(market: str, selection: str) -> str:
@@ -325,9 +360,10 @@ def _format_market_public(market: str, selection: str) -> str:
         if s == "home": return "Home win"
         if s == "away": return "Away win"
         if s == "draw": return "Draw"
-    if m in ("o/u", "over_under_25"):
-        if "over" in s: return "Over 2.5 goals"
-        if "under" in s: return "Under 2.5 goals"
+    if m in ("o/u", "over_under_15", "over_under_25", "over_under_35"):
+        line = {"over_under_15": "1.5", "over_under_35": "3.5"}.get(m, "2.5")
+        if "over" in s: return f"Over {line} goals"
+        if "under" in s: return f"Under {line} goals"
     if m == "btts":
         return "Both teams to score: Yes" if "yes" in s else "Both teams to score: No"
     return f"{market} · {selection}"
@@ -494,7 +530,8 @@ def signal_all_bets(*, lookahead_hours: int = 36,
                 "telegram_message_id": None,
                 "would_post_public": _pub_ok,
                 "would_prompt_operator": bool(
-                    operator_pick_alerts_enabled() and not b.get("already_placed")),
+                    operator_pick_alerts_enabled() and not b.get("already_placed")
+                    and b.get("clears_placement_floor")),
                 "preview": (_format_public_signal(b) if _pub_ok
                             else "(not public-eligible — nothing would be sent)"),
                 "preview_operator": msg if operator_pick_alerts_enabled() else None,
@@ -540,7 +577,10 @@ def signal_all_bets(*, lookahead_hours: int = 36,
         # bet_telegram_alerts — 10 of them the same day). That is a SEPARATE
         # path and is untouched here; silencing it is its own decision.
         tg_id = None
-        if operator_pick_alerts_enabled() and not b.get("already_placed"):
+        # [[#174]] the operator prompt asks for a MANUAL REAL-MONEY bet, so it keeps the
+        # Coolbet placement floor (`clears_placement_floor`); the public channel does not.
+        if (operator_pick_alerts_enabled() and not b.get("already_placed")
+                and b.get("clears_placement_floor")):
             tg_id = send_telegram(
                 msg,
                 dedup_key=f"signal-{sim_id}",
@@ -591,15 +631,22 @@ def signal_all_bets(*, lookahead_hours: int = 36,
         # #162 W5.3: the post goes through the ONE audited sender, which re-checks the pause
         # and the canonical bot's distribution (fail closed), writes the `pick_sends` row
         # (now with the public message id) and dedupes in the DB.
+        # [[#174]] a SENT group on a public market whose canonical row fails the
+        # public-Telegram rule (a TESTING pick below EV 5%) is handed to send_pick too:
+        # send_pick applies the SAME rule (ev passed) and records the skip in pick_sends
+        # ('testing_below_ev5'), so "why did this /picks pick not reach Telegram" is a query.
         public_eligible = is_public_eligible(b)
         public_msg_id = None
         already_sent = False
-        if public_eligible:
+        filtered_public = False
+        if bool(b.get("group_sends_public")) and b.get("market") in _PUBLIC_MARKETS:
             _ps = send_pick(CHANNEL_PUBLIC, b["bot_name"], "simulated_bets", sim_id,
                             _format_public_signal(b), match_id=b["match_id"],
-                            market=b["market"], selection=b["selection"])
+                            market=b["market"], selection=b["selection"], ev=b.get("ev"))
             public_msg_id = _ps.message_id
-            if _ps.reason and _ps.reason.startswith("duplicate"):
+            if not public_eligible:
+                filtered_public = True     # recorded skip; left unmarked (group can change)
+            elif _ps.reason and _ps.reason.startswith("duplicate"):
                 # Already out on an earlier pass whose signaled_at mark failed: retire it now.
                 already_sent = True
                 _mark_signaled(b["match_id"], b["market"], b["selection"])
@@ -628,7 +675,8 @@ def signal_all_bets(*, lookahead_hours: int = 36,
         else:
             results.append({
                 "simulated_bet_id": b["simulated_bet_id"],
-                "outcome": ("not_public" if not public_eligible
+                "outcome": ("filtered_public" if filtered_public
+                            else "not_public" if not public_eligible
                             else "already_sent" if already_sent else "skipped"),
                 "telegram_message_id": None,
                 "public_channel_message_id": None,

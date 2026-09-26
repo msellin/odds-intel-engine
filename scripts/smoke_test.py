@@ -6837,7 +6837,9 @@ def test_coolbet_signaler():
     # pooled 13% while the placer used 10% for home-underdogs, so those picks
     # were PLACED with real money but never signalled to Telegram (Stevenage v
     # Luton). Pin the shared utility, not the old name.
-    assert "clears_edge_floor" in sig_src and "_MIN_EDGE" in sig_src, (
+    # [[#174]] 2026-09-26: `_MIN_EDGE` left the SQL (the floor is placement-only now, a per-row
+    # `clears_placement_floor` for the operator prompt); the shared predicate stays.
+    assert "clears_edge_floor" in sig_src and "clears_placement_floor" in sig_src, (
         "signaler must reuse the placer's shared edge predicate "
         "(clears_edge_floor) + _MIN_EDGE so the floors AND the comparison stay "
         "in lock-step. It must NOT re-derive a floor locally, must NOT fall "
@@ -19860,7 +19862,7 @@ def _fake_pick_sender():
         rows[row_id].update(status=status, reason=reason, message_id=message_id)
 
     _ps._pause_block = lambda: None
-    _ps._distribution_block = lambda channel, bot: None
+    _ps._distribution_block = lambda channel, bot, ev=None: None   # [[#174]] ev = public-rule input
     _ps._unconfigured = lambda channel: None
     _ps._no_audience = lambda channel: None   # #162 review: the empty-audience reclassification
     _ps._record, _ps._finalise = _record, _finalise
@@ -19946,7 +19948,9 @@ def test_one_audited_pick_sender():
             d = state["dist"].get(params[0])
             if d is None:
                 return []
-            return [{"ok": d[0] if "sent_public" in sql else d[1], "label": "TESTING"}]
+            # [[#174]] status 'beta': the public-Telegram rule sends every BETA/CALIBRATED pick
+            # (a TESTING one needs its EV — see PUBLIC-TELEGRAM-ONE-RULE-EV5).
+            return [{"ok": d[0] if "sent_public" in sql else d[1], "label": "BETA", "status": "beta"}]
         raise AssertionError(sql)
 
     def wr(sql, params):
@@ -47068,10 +47072,14 @@ def _():
     finally:
         sig.execute_query = orig
 
-    kept = [float(o["calibrated_prob"]) for o in out]
+    # [[#174]] (owner 2026-09-26): the placement floor no longer DROPS a candidate — it is
+    # 🤖 OWN and gates only the operator's manual-placement prompt, via the per-row flag
+    # `clears_placement_floor`. The public channel uses the public-Telegram rule instead.
+    kept = [float(o["calibrated_prob"]) for o in out if o["clears_placement_floor"]]
     assert kept == [0.49], (
-        "the signaler must drop the pick whose DERIVED edge misses the floor "
-        f"and keep the one that clears it — kept cal_probs {kept}")
+        "the placement floor must be decided on the DERIVED edge: the pick whose derived "
+        f"edge misses the floor must NOT clear it, the other must — cleared cal_probs {kept}")
+    out = [o for o in out if o["clears_placement_floor"]]
     assert abs(float(out[0]["edge_percent"]) - 0.0883936) < 1e-5, (
         "the surviving candidate must carry the DERIVED edge, not the stored "
         f"0.09 — _format_signal renders this key: {out[0]['edge_percent']}")
@@ -53932,7 +53940,7 @@ def test_vip_bot():
     assert "'bot_combined_1x2_ev8_v1'" in m421 and "(b.vip OR b.hide_pending)" in m421, \
         "EV8's picks are the VIP bot's EV8 picks — its pending rows must be hidden too"
     sig = _engine_path("workers/automation/coolbet_signaler.py").read_text(encoding="utf-8")
-    assert "AND b.name <> ALL(%s)" in sig and "(sorted(VIP_BOTS), _MIN_EDGE, lookahead_hours)" in sig
+    assert "AND b.name <> ALL(%s)" in sig and "(sorted(VIP_BOTS), lookahead_hours, sorted(HEADLINE_STATUSES))" in sig
     pipe = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text(encoding="utf-8")
     body = pipe[pipe.index("for _tk, _tb in _tele_bets.items():"):]
     body = body[:body.index("ADMIN-TG-CLARITY")]
@@ -55730,7 +55738,7 @@ def test_one_status_decides_distribution():
     sig = _engine_path("workers/automation/coolbet_signaler.py").read_text()
     assert "JOIN bot_distribution bd ON bd.bot_name = b.name" in sig and "bool_or(bd.sent_public)" in sig
     assert "maturity_label = 'calibrated'" not in sig, "the old calibrated-only public gate must be gone"
-    assert "bd.sent_public DESC, sb.edge_percent DESC" in sig, "a SENT bot's row must supply the message"
+    assert "bd.sent_public DESC,\n                   (bd.status = ANY(%s)) DESC" in sig, "a SENT bot's row must supply the message (#174: BETA/CALIBRATED first, then max EV)"
     sched = _engine_path("workers/scheduler.py").read_text()
     assert "sent_bots = load_sent_public_bots()" in sched
     assert 'not arm_bot_sends(c, "live", sent_bots)' in sched and "not arm_bot_sends(c, CONSENSUS_ARM, sent_bots)" in sched
@@ -55906,7 +55914,7 @@ def test_one_status_decides_distribution():
     sig = _engine_path("workers/automation/coolbet_signaler.py").read_text()
     assert "JOIN bot_distribution bd ON bd.bot_name = b.name" in sig and "bool_or(bd.sent_public)" in sig
     assert "maturity_label = 'calibrated'" not in sig, "the old calibrated-only public gate must be gone"
-    assert "bd.sent_public DESC, sb.edge_percent DESC" in sig, "a SENT bot's row must supply the message"
+    assert "bd.sent_public DESC,\n                   (bd.status = ANY(%s)) DESC" in sig, "a SENT bot's row must supply the message (#174: BETA/CALIBRATED first, then max EV)"
     sched = _engine_path("workers/scheduler.py").read_text()
     assert "sent_bots = load_sent_public_bots()" in sched
     assert 'not arm_bot_sends(c, "live", sent_bots)' in sched and "not arm_bot_sends(c, CONSENSUS_ARM, sent_bots)" in sched
@@ -56622,6 +56630,104 @@ def test_account_matcher_canonical_ou():
     assert m(t, row("over_under_25", "under")) is None, "the other side is a different bet"
     t1 = {"match_name": "Arsenal - Chelsea", "market": "Match Result", "selection": "Arsenal"}
     assert m(t1, row("1x2", "home")) and m(t1, row("1x2", "away")) is None
+
+@test("PUBLIC-TELEGRAM-ONE-RULE-EV5 — #174: one public-Telegram rule (BETA/CALIBRATED + TESTING at EV >= 5%), both senders use it, no Coolbet floor on the public path")
+def test_public_telegram_one_rule_ev5():
+    """[[#174]] owner decision 2026-09-26. The public Telegram channel carries every BETA /
+    CALIBRATED pick plus TESTING picks at EV >= 5% (bot probability x published odds - 1); /picks
+    is unchanged. Before: the forward-test publisher sent every TESTING pick, while the model
+    signaler applied the Coolbet REAL-MONEY floors (13pp 1x2 / 8pp O/U) so 0 of 103 upcoming picks
+    of the EV-unit TESTING bots ever went out. Pins: (1) the rule and its 5% threshold, behaviourally;
+    (2) send_pick enforces it for the public channel (a TESTING pick without its EV is refused) and
+    records the skip reason; (3) both senders pass the EV; (4) the signaler's public path carries no
+    placement floor, which stays on the operator prompt only; (5) the O/U 1.5/3.5 lines are public."""
+    import inspect
+    from decimal import Decimal
+    from workers.utils import bot_status as bs
+    import workers.api_clients.db as db
+    import workers.notify.pick_sender as ps
+    import workers.automation.coolbet_signaler as sig
+
+    # (1) the rule
+    assert bs.PUBLIC_TESTING_MIN_EV == 0.05
+    R = bs.public_channel_skip_reason
+    assert R("calibrated", None) is None and R("beta", -0.2) is None, "BETA/CALIBRATED: every pick"
+    assert R("testing", 0.05) is None and R("testing", Decimal("0.0500")) is None, "EV exactly 5% MEETS the bar"
+    assert R("testing", 0.0499999999999) is None, "float noise at the bar must not drop a pick"
+    assert R("testing", Decimal("0.0499")) == "testing_below_ev5"
+    assert R("testing", None) == "testing_ev_unknown" and R("testing", "x") == "testing_ev_unknown", "fail closed"
+    assert R("experimental", 0.5).startswith("not_distributed") and R("retired", 0.5).startswith("not_distributed")
+    assert R("testing", 0.5, sent_public=False).startswith("not_distributed"), "VIP (sent_public false) never public"
+    assert bs.public_channel_eligible("testing", 0.06) and not bs.public_channel_eligible("testing", 0.04)
+
+    # (2) send_pick enforces it on the PUBLIC channel only, and records the reason
+    sent, recorded = [], []
+    o = (db.execute_query, ps._deliver, ps._record, ps._finalise, ps._unconfigured)
+    try:
+        db.execute_query = _this_thread_only(lambda sql, *a, **k: (
+            [{"publishing_paused": False}] if "publishing_paused" in sql
+            else [{"ok": True, "label": "TESTING", "status": "testing"}]), o[0])
+        ps._deliver = _this_thread_only(lambda *a, **k: sent.append(a) or (555, None), o[1])
+        ps._record = _this_thread_only(lambda st, r, key, meta: recorded.append((st, r)) or [{"id": 1}], o[2])
+        ps._finalise = _this_thread_only(lambda *a, **k: None, o[3])
+        ps._unconfigured = _this_thread_only(lambda ch: None, o[4])
+        ps._FALLBACK_SENT.clear()
+        r = ps.send_pick("public", "bot_t", "simulated_bets", "e1", "x", ev=0.03)
+        assert r.status == "skipped" and r.reason == "testing_below_ev5" and not sent, r
+        assert ("skipped", "testing_below_ev5") in recorded, "the skip must be recorded in pick_sends"
+        r = ps.send_pick("public", "bot_t", "simulated_bets", "e2", "x")
+        assert r.reason == "testing_ev_unknown" and not sent, "a TESTING public pick with no EV is refused"
+        r = ps.send_pick("public", "bot_t", "picks_forward_test", "e3", "x", ev=Decimal("0.061"))
+        assert r.status == "sent" and len(sent) == 1, r
+        r = ps.send_pick("vip_channel", "bot_t", "simulated_bets", "e4", "x")
+        assert r.status == "sent", "the EV bar is a PUBLIC-channel rule only"
+    finally:
+        db.execute_query, ps._deliver, ps._record, ps._finalise, ps._unconfigured = o
+        ps._FALLBACK_SENT.clear()
+
+    # (3) both senders hand send_pick the pick's EV
+    sch = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
+    job = sch[sch.index("def job_publish_picks_forward_test"):sch.index("def _publish_picks_forward_test_wrapper")]
+    assert 'skip_reason=skip, ev=c.get("edge"))' in job, "forward-test job: EV = the candidate's edge (p_sharp x odds - 1)"
+    pub = _engine_path("scripts/publish_picks_forward_test.py").read_text(encoding="utf-8")
+    assert 'ev=c.get("edge"), **_kw)' in pub[pub.index("def main("):]
+    send = inspect.getsource(sig.signal_all_bets)
+    assert 'ev=b.get("ev"))' in send
+    assert "public_channel_eligible(" in inspect.getsource(sig.is_public_eligible)
+    assert "public_channel_skip_reason(" in inspect.getsource(ps._distribution_block)
+
+    # (4) no Coolbet placement floor on the public path; it stays on the operator prompt
+    elig = inspect.getsource(sig.is_public_eligible).split('"""')[-1]
+    for bad in ("clears_edge_floor", "min_edge_for_pick", "_MIN_EDGE", "clears_placement_floor"):
+        assert bad not in elig, f"is_public_eligible must not apply the placement floor ({bad})"
+    assert "edge_percent >=" not in inspect.getsource(sig.load_signal_candidates)
+    assert 'b.get("clears_placement_floor")' in send, "the operator manual-placement prompt keeps the floor"
+    ko = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+    row = {"simulated_bet_id": "x", "match_id": "m", "market": "over_under_35", "selection": "under",
+           "odds_at_pick": Decimal("1.60"), "edge_percent": Decimal("0.04"),
+           "calibrated_prob": Decimal("0.6625"), "stake": 1, "model_probability": Decimal("0.6625"),
+           "kelly_fraction": None, "bot_id": "b", "recommended_bookmaker": "Coolbet",
+           "bot_name": "bot_v10_ou_comb_v1", "maturity": "testing", "status": "testing",
+           "match_date": ko, "coolbet_match_id": None, "home_team": "H", "away_team": "A",
+           "league": "L", "country": "C", "bot_count": 1, "already_placed": False,
+           "sends_public": True, "group_sends_public": True, "group_held_back": False}
+    orig = sig.execute_query
+    try:
+        sig.execute_query = lambda *a, **k: [dict(row), dict(row, calibrated_prob=Decimal("0.6500"))]
+        out = sig.load_signal_candidates()
+    finally:
+        sig.execute_query = orig
+    assert len(out) == 2 and not any(c["clears_placement_floor"] for c in out), "4pp is under the 8pp placement floor"
+    assert abs(out[0]["ev"] - 0.06) < 1e-9 and sig.is_public_eligible(out[0]), (
+        "a TESTING pick at EV 6% under the placement floor must still be public-eligible")
+    assert not sig.is_public_eligible(out[1]), "EV 4% TESTING pick: /picks only, not Telegram"
+
+    # (5) the O/U twin's other lines are public markets with their own labels
+    assert {"over_under_15", "over_under_35"} <= sig._PUBLIC_MARKETS
+    assert sig._format_market_public("over_under_35", "under") == "Under 3.5 goals"
+    assert sig._format_market_public("over_under_15", "over") == "Over 1.5 goals"
+    assert sig._format_market_public("over_under_25", "over") == "Over 2.5 goals"
+    return "one rule, both senders, EV5 pinned, placement floor operator-only"
 
 if __name__ == "__main__":
     main()

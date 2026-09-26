@@ -619,3 +619,19 @@ ones already sent to the channel, or already settled, keep their record and carr
 (never deleted, never unsent). Counts at the time: 13 pending picks held back (consensus 10 = B 1 / C 6 / D 3,
 live 3); 10 of them had already been sent and are flagged `vip_rule_breach`; the 3 D picks were never sent. No
 settled published-arm pick broke the rule. Smoke `VIP-FIRST-HOLD-BACK`.
+
+## DEVIATION — 2026-09-26 ([[#174]], owner decision) — Telegram carries only TESTING picks at EV ≥ 5%
+
+**What changes.** Only the TELEGRAM send. Every published-arm bot is TESTING, and the public channel now
+carries a TESTING pick only when its EV ≥ 5% (`edge` = `fair_prob` (p_sharp) × odds − 1; the ONE rule
+`workers/utils/bot_status.public_channel_skip_reason`, enforced in `pick_sender.send_pick`). A pick below that
+is **still claimed, recorded, counted and shown on /picks** exactly as before; its `pick_sends` row reads
+`skipped · testing_below_ev5` and `picks_forward_test.telegram_message_id` stays NULL.
+
+**What does NOT change.** The selection rule, the pricing, `daily_room()`, the junk control, the twin arms, the
+stopping rule, n and the public list `/picks` (every TESTING / BETA / CALIBRATED pick). The test measures the
+RULE's picks; the channel is now a subset of them.
+
+**Readout consequence.** "What a Telegram subscriber received" = rows with `telegram_message_id IS NOT NULL`;
+"what a /picks reader could have taken" = rows not held back (`held_back_reason IS NULL`). The rule's own result
+includes every claimed row. Smoke `PUBLIC-TELEGRAM-ONE-RULE-EV5`.

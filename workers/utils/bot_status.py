@@ -4,7 +4,8 @@ A bot's status (`bots.maturity_label`; `retired_at` = retired) is the ONLY per-b
 decides where its picks go. No second per-bot switch may drift from it:
 
     EXPERIMENTAL  admins only (/admin/bots) · nothing sent · nothing public (not even pending rows)
-    TESTING       row on /performance marked TESTING · picks SENT (/picks + public Telegram)
+    TESTING       row on /performance marked TESTING · every pick on /picks · public Telegram only
+                  at EV >= 5% ([[#174]], public_channel_skip_reason below)
                   · counted in its own record · NOT in the headline totals
     BETA          sent · own record · headline totals
     CALIBRATED    same as BETA, with the strongest evidence
@@ -73,6 +74,48 @@ def forward_test_bot(arm: str, market: str | None, grade: str | None) -> str:
     if market == "over_under_25":
         return "bot_sharp_ou_v1"
     return "bot_sharp_1x2_v1"
+
+
+# ── THE PUBLIC TELEGRAM CHANNEL RULE ([[#174]], owner decision 2026-09-26) ─────────────────────
+# /picks shows EVERY pick of a TESTING / BETA / CALIBRATED bot (unchanged). The public Telegram
+# channel is a stricter subset, so each post feels special:
+#   * every pick of a BETA or CALIBRATED bot, plus
+#   * a TESTING pick only when its EV >= PUBLIC_TESTING_MIN_EV (5%), where
+#     EV = the bot's own probability x the pick's published odds - 1
+#     (simulated_bets: calibrated_prob x odds_at_pick; picks_forward_test: fair_prob (= p_sharp)
+#     x odds, i.e. its `edge` column);
+#   * never VIP / EXPERIMENTAL / retired (bot_distribution.sent_public) and never a VIP-held pick
+#     (#164 held_back_until — checked by the callers, unchanged).
+# ONE function, used by BOTH public senders (coolbet_signaler and the forward-test publisher) AND
+# enforced again inside pick_sender.send_pick for the public channel, so no third caller can post a
+# TESTING pick without passing its EV. The Coolbet real-money edge floors (13pp 1x2 / 8pp O/U) are
+# 🤖 OWN placement gates and are NOT part of this rule (they stay on the placer / operator prompt).
+PUBLIC_TESTING_MIN_EV = 0.05
+SKIP_TESTING_BELOW_EV = "testing_below_ev5"
+SKIP_TESTING_EV_UNKNOWN = "testing_ev_unknown"
+
+
+def public_channel_skip_reason(status: str | None, ev, *, sent_public: bool = True) -> str | None:
+    """None = this pick may be posted to the public Telegram channel; else the pick_sends reason.
+    `status` is bot_distribution.status (lower-case), `ev` the pick's expected return (0.05 = 5%).
+    Fails CLOSED: a TESTING pick whose EV cannot be read is not posted."""
+    if not sent_public or status not in PUBLIC_STATUSES:
+        return f"not_distributed: {status or 'unknown'} does not send to public"
+    if status in HEADLINE_STATUSES:
+        return None
+    try:
+        ev_f = float(ev)          # Decimal from psycopg2 -> float (the Decimal-vs-float trap)
+    except (TypeError, ValueError):
+        return SKIP_TESTING_EV_UNKNOWN
+    if ev_f != ev_f:              # NaN
+        return SKIP_TESTING_EV_UNKNOWN
+    # 1e-9 tolerance: an EV of exactly 5% computed as 0.0499999999 must MEET the threshold.
+    return None if ev_f >= PUBLIC_TESTING_MIN_EV - 1e-9 else SKIP_TESTING_BELOW_EV
+
+
+def public_channel_eligible(status: str | None, ev, *, sent_public: bool = True) -> bool:
+    """Bool face of public_channel_skip_reason — the ONE public-Telegram rule ([[#174]])."""
+    return public_channel_skip_reason(status, ev, sent_public=sent_public) is None
 
 
 def load_sent_public_bots() -> set[str] | None:

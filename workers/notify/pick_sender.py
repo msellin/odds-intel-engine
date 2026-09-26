@@ -10,7 +10,9 @@ hands it (channel, bot, pick ref, text) and it:
   1. checks the operator pause (`coolbet_session_state.publishing_paused`, /pausepicks) — for
      EVERY channel; the VIP senders used to ignore it;
   2. checks the bot's distribution (view `bot_distribution`, #155): `sent_public` for the
-     public channel, `vip_channel` for the VIP channel and the DMs;
+     public channel, `vip_channel` for the VIP channel and the DMs; for the PUBLIC channel also
+     THE public-Telegram rule ([[#174]], `bot_status.public_channel_skip_reason`): BETA /
+     CALIBRATED always, TESTING only at EV >= 5% (callers pass `ev`);
   3. claims a `pick_sends` row (migration 457) BEFORE the send and finalises it after
      (message id / recipients, sent / failed + reason); skips are recorded with their reason;
   4. dedupes in the DB (unique on channel + pick ref), so a scheduler restart can never
@@ -82,13 +84,16 @@ def _pause_block() -> Optional[str]:
     return None
 
 
-def _distribution_block(channel: str, bot: str) -> Optional[str]:
-    """None = the bot's status allows this channel. A reason string = do not send."""
+def _distribution_block(channel: str, bot: str, ev=None) -> Optional[str]:
+    """None = the bot's status allows this channel. A reason string = do not send.
+    [[#174]] for the PUBLIC channel the bot's status must also pass THE public-Telegram rule
+    (bot_status.public_channel_skip_reason): BETA/CALIBRATED always, TESTING only at EV >= 5%.
+    A TESTING pick sent without its `ev` is refused (fail closed)."""
     col = CHANNEL_DISTRIBUTION[channel]
     try:
         from workers.api_clients.db import execute_query
         rows = execute_query(
-            f"SELECT {col} AS ok, label FROM bot_distribution WHERE bot_name = %s", (bot,))
+            f"SELECT {col} AS ok, label, status FROM bot_distribution WHERE bot_name = %s", (bot,))
     except Exception as e:  # noqa: BLE001 — fail CLOSED
         log.warning("send_pick: bot_distribution unreadable — not sending %s: %s", bot, e)
         return "distribution_unreadable"
@@ -96,6 +101,9 @@ def _distribution_block(channel: str, bot: str) -> Optional[str]:
         return "bot_unknown"
     if not rows[0]["ok"]:
         return f"not_distributed: {rows[0].get('label')} does not send to {channel}"
+    if channel == CHANNEL_PUBLIC:
+        from workers.utils.bot_status import public_channel_skip_reason
+        return public_channel_skip_reason(rows[0].get("status"), ev)
     return None
 
 
@@ -187,18 +195,20 @@ def _deliver(channel: str, text: str, silent: bool, reply_markup: Optional[dict]
 def send_pick(channel: str, bot: str, pick_table: str, pick_id, text: str, *,
               match_id=None, market: Optional[str] = None, selection: Optional[str] = None,
               skip_reason: Optional[str] = None, silent: bool = False,
-              reply_markup: Optional[dict] = None) -> PickSend:
+              reply_markup: Optional[dict] = None, ev=None) -> PickSend:
     """Send one pick to one customer channel — pause, distribution, audit row, DB dedupe.
     Never raises (except ValueError on an unknown channel/table — a programming error).
     `skip_reason`: the CALLER already decided not to send (e.g. #164 held back, or the pause it
     read at the start of its pass) — nothing is sent, the skip is recorded with that reason, so
-    pick_sends also says why a recorded pick never went out. It can only ever PREVENT a send."""
+    pick_sends also says why a recorded pick never went out. It can only ever PREVENT a send.
+    `ev`: the pick's expected return (bot probability x published odds - 1). Required for a
+    TESTING bot's pick on the PUBLIC channel ([[#174]] — sent only at EV >= 5%)."""
     if channel not in CHANNEL_DISTRIBUTION or pick_table not in PICK_TABLES:
         raise ValueError(f"send_pick: unknown channel/table {channel!r}/{pick_table!r}")
     key = (channel, pick_table, str(pick_id))
     meta = (bot, str(match_id) if match_id else None, market, selection)
 
-    block = (skip_reason or _pause_block() or _distribution_block(channel, bot) or _unconfigured(channel)
+    block = (skip_reason or _pause_block() or _distribution_block(channel, bot, ev) or _unconfigured(channel)
              or _no_audience(channel))
     if block:
         _record("skipped", block, key, meta)

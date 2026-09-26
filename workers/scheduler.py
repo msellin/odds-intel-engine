@@ -2549,11 +2549,25 @@ def job_publish_picks_forward_test():
     # pick_sends row and dedupes on (channel, pick) in the DB — on top of claim(), which
     # still decides "this run created the ledger row". Returns the message id (or None).
     # `skip` = this pass already decided not to send: recorded with the reason, never sent.
+    #
+    # [[#174]] (owner 2026-09-26) — THE public-Telegram rule: every forward-test bot is TESTING,
+    # so a pick reaches the channel only at EV >= 5% (EV = fair_prob (p_sharp) x odds - 1, the
+    # candidate's `edge`). send_pick applies bot_status.public_channel_skip_reason itself from
+    # the `ev` passed here and records 'testing_below_ev5'. The pick is still claimed and on
+    # /picks — only Telegram is filtered. `ev_filtered` = pick ids held back by that rule, so
+    # the loops below do not log them as failed sends.
+    ev_filtered: set = set()
+
     def _send_ft(c, arm, pick_id, skip=None):
-        return send_pick(CHANNEL_PUBLIC, forward_test_bot(arm, c.get("market"), c.get("grade")),
-                         "picks_forward_test", pick_id, render(c), match_id=c.get("match_id"),
-                         market=c.get("market"), selection=c.get("selection"),
-                         skip_reason=skip).message_id
+        ps = send_pick(CHANNEL_PUBLIC, forward_test_bot(arm, c.get("market"), c.get("grade")),
+                       "picks_forward_test", pick_id, render(c), match_id=c.get("match_id"),
+                       market=c.get("market"), selection=c.get("selection"),
+                       skip_reason=skip, ev=c.get("edge"))
+        if skip is None and ps.status == "skipped" and (ps.reason or "").startswith("testing_"):
+            ev_filtered.add(pick_id)
+            log.info("picks_forward_test: recorded, not sent to Telegram (%s): %s v %s",
+                     ps.reason, c.get("home_team"), c.get("away_team"))
+        return ps.message_id
 
     def _record_unsent(c, arm, pick_id, is_paused):
         _send_ft(c, arm, pick_id, skip=(
@@ -2667,7 +2681,9 @@ def job_publish_picks_forward_test():
             _record_unsent(c, "live", pick_id, paused)
             continue
         mid = _send_ft(c, "live", pick_id)
-        if mid is None:
+        if mid is None and pick_id in ev_filtered:
+            pass                                   # [[#174]] TESTING below EV 5% — logged above
+        elif mid is None:
             log.warning("picks_forward_test: send FAILED for %s v %s — "
                         "row kept, unpublished",
                         c.get("home_team"), c.get("away_team"))
@@ -2697,7 +2713,9 @@ def job_publish_picks_forward_test():
             _record_unsent(c, CONSENSUS_ARM, pick_id, paused)
             continue
         mid = _send_ft(c, CONSENSUS_ARM, pick_id)
-        if mid is None:
+        if mid is None and pick_id in ev_filtered:
+            pass                                   # [[#174]] TESTING below EV 5% — logged above
+        elif mid is None:
             log.warning("picks_forward_test[consensus]: send FAILED for %s v %s "
                         "— row kept, unpublished",
                         c.get("home_team"), c.get("away_team"))
@@ -2735,7 +2753,8 @@ def job_publish_picks_forward_test():
              len(picks), sent, skipped, len(consensus_picks), c_sent, twins)
     return {"picks": len(picks), "published": sent, "already_published": skipped,
             "consensus_picks": len(consensus_picks), "consensus_published": c_sent,
-            "room": room, "board": n_board, "paused": paused, "twins_recorded": twins}
+            "room": room, "board": n_board, "paused": paused, "twins_recorded": twins,
+            "telegram_filtered_ev": len(ev_filtered)}
 
 
 def _publish_picks_forward_test_wrapper():

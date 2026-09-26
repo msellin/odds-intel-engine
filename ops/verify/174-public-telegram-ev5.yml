@@ -1,0 +1,32 @@
+# #174 — the public Telegram channel carries BETA/CALIBRATED picks + TESTING picks at EV >= 5% only.
+task: "#174"
+checks:
+  - name: no_public_send_of_testing_pick_below_ev5_simulated
+    mode: invariant
+    sql: |
+      SELECT count(*) FROM pick_sends ps
+        JOIN simulated_bets sb ON sb.id = ps.pick_id
+        JOIN bot_distribution bd ON bd.bot_name = ps.bot_name
+       WHERE ps.channel = 'public' AND ps.pick_table = 'simulated_bets' AND ps.status = 'sent'
+         AND ps.sent_at > '2026-09-26T08:15:00Z'   -- after the deploy
+         AND bd.status = 'testing'
+         AND sb.calibrated_prob * sb.odds_at_pick - 1 < 0.05 - 1e-9
+    expect: "== 0"
+    expires: "2026-10-03T00:00:00Z"
+  - name: no_public_send_of_testing_pick_below_ev5_forward_test
+    mode: invariant
+    sql: |
+      SELECT count(*) FROM pick_sends ps
+        JOIN picks_forward_test f ON f.id = ps.pick_id
+        JOIN bot_distribution bd ON bd.bot_name = ps.bot_name
+       WHERE ps.channel = 'public' AND ps.pick_table = 'picks_forward_test' AND ps.status = 'sent'
+         AND ps.sent_at > '2026-09-26T08:15:00Z'   -- after the deploy
+         AND bd.status = 'testing'
+         AND f.edge < 0.05 - 1e-9
+    expect: "== 0"
+    expires: "2026-10-03T00:00:00Z"
+  - name: ev5_filter_is_recording_skips
+    mode: eventually
+    sql: SELECT count(*) FROM pick_sends WHERE channel = 'public' AND reason = 'testing_below_ev5'
+    expect: ">= 1"
+    expires: "2026-09-28T00:00:00Z"

@@ -1273,6 +1273,7 @@ def main() -> int:
     from workers.notify.pick_sender import CHANNEL_PUBLIC, send_pick
     sent_bots = load_sent_public_bots()   # [[#155]] the bot's status decides the send
     sent = 0
+    filtered = 0                          # [[#174]] TESTING below EV 5%: recorded, not sent
     for c in picks:
         pick_id = claim(c, "live")
         if pick_id is None:
@@ -1296,9 +1297,17 @@ def main() -> int:
             send_pick(CHANNEL_PUBLIC, _bot, "picks_forward_test", pick_id, render(c),
                       skip_reason=f"held_back: {c['held_back_reason']}", **_kw)
             continue
-        mid = send_pick(CHANNEL_PUBLIC, _bot, "picks_forward_test", pick_id, render(c),
-                        **_kw).message_id
-        if mid is None:
+        # [[#174]] THE public-Telegram rule (bot_status.public_channel_skip_reason, applied in
+        # send_pick from `ev`): these bots are TESTING, so only EV >= 5% (edge = p_sharp x odds - 1)
+        # is posted; below that the pick stays recorded (and on /picks), skip recorded in pick_sends.
+        _ps = send_pick(CHANNEL_PUBLIC, _bot, "picks_forward_test", pick_id, render(c),
+                        ev=c.get("edge"), **_kw)
+        mid = _ps.message_id
+        if mid is None and (_ps.reason or "").startswith("testing_"):
+            log.info("recorded, not sent to Telegram (%s): %s v %s", _ps.reason,
+                     c["home_team"], c["away_team"])
+            filtered += 1
+        elif mid is None:
             log.warning("send FAILED: %s v %s — row kept, unpublished",
                         c["home_team"], c["away_team"])
         else:
@@ -1312,8 +1321,9 @@ def main() -> int:
     for c in junk_anchor_arm(pool)[:max(0, room)]:
         claim(c, "junk_anchor")
 
-    print(f"\npublished {sent}/{len(picks)} to the channel, all recorded")
-    return 0 if sent == len(picks) else 1
+    print(f"\npublished {sent}/{len(picks)} to the channel ({filtered} below the TESTING "
+          f"EV 5% Telegram bar), all recorded")
+    return 0 if sent + filtered == len(picks) else 1
 
 
 if __name__ == "__main__":

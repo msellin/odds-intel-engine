@@ -284,6 +284,12 @@ paper/trigger path. So the per-market edge-floor work now DOES reach real money 
 `bot_coolbet_value_v1` was retired and real money moved to the model bots. The odds
 floor (`_min_odds_for`) remains shared across both placers.
 
+> **CHANGED 2026-09-26 ([[#174]]): the edge floors are PLACEMENT-ONLY.** The public Telegram channel no
+> longer applies them (it uses the public-Telegram rule — BETA/CALIBRATED + TESTING at EV ≥ 5%, see
+> `docs/SYSTEM_MAP.md` Lifecycle). In `coolbet_signaler` the shared `clears_edge_floor` now sets a per-row
+> `clears_placement_floor` that gates only the operator's manual-placement prompt. The paragraph below is
+> history for the signal path.
+
 **SIGNAL-PLACER-1X2-ALIGN (2026-09-10):** the Telegram SIGNAL path
 (`coolbet_placer.load_qualified_bets`) used to gate every 1x2 selection on the
 pooled `_min_edge_for('1x2')=0.13`, while the real-money placer fires 1x2
