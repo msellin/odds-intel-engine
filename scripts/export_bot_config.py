@@ -382,6 +382,20 @@ def _paper_module_rows() -> dict[str, dict]:
             books=list(m.PLACEMENT_BOOKS), books_source=src(fname, r"^PLACEMENT_BOOKS"),
             anchor="sharp",
         )
+    # [[#182]] the OWN bot (workers/jobs/own_bots.py) — shadow_bets, paper, v2 anchor.
+    from workers.jobs import own_bots as ob
+    fob = "workers/jobs/own_bots.py"
+    out[ob.OWN_BOT] = _row(
+        ob.OWN_BOT, "sharp_generator",
+        description="OWN bot (#182): best Estonian-book 1X2 price EV >= 3% over the v2 anchor, < 3 h to kick-off, >= 3 books confirm.",
+        ledger="shadow_bets", writer_job="own_bots", cadence="every 10 min", markets=[ob.MARKET],
+        prob_source="v2 anchor (Pinnacle+exchange, else a >=5-book consensus without the priced book)",
+        edge_floor=f"EV {ob.EDGE_FLOOR:g}", edge_floor_source=src("workers/jobs/own_bet_board.py", r"^EDGE_FLOOR"),
+        gates=[gate("max_hours_to_ko", ob.MAX_HOURS_TO_KO, src(fob, r"^MAX_HOURS_TO_KO")),
+               gate("confirm_min_books", ob.CONFIRM_MIN_BOOKS, src(fob, r"^CONFIRM_MIN_BOOKS")),
+               gate("confirm_ratio", ob.CONFIRM_RATIO, src(fob, r"^CONFIRM_RATIO"))],
+        books=list(ob.OWN_BOOKS), books_source=src(fob, r"^OWN_BOOKS"), anchor="sharp",
+    )
     # #149 O/U sharp-outlier bots (workers/jobs/ou_sharp_outlier.py) — simulated_bets, paper.
     from workers.jobs import ou_sharp_outlier as ou
     fo = "workers/jobs/ou_sharp_outlier.py"

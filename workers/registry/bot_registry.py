@@ -50,6 +50,7 @@ FAM_COOLBET_PAPER = "coolbet_paper"    # Coolbet own-price paper bots
 FAM_INTERNAL = "internal"              # internal model/strategy paper validators
 FAM_FORWARD_TEST = "forward_test"      # pre-registered published-picks forward test
 FAM_INPLAY = "inplay"                  # in-play slow-state rig (paper) — OWN Phase 1b
+FAM_OWN = "own"                        # [[#182]] OWN bot(s): one per market, Estonian books, paper (own_bots.py)
 
 FAMILY_TITLES = {
     FAM_COOLBET_REAL: "Real-money capable · Coolbet UI placer",
@@ -58,6 +59,7 @@ FAMILY_TITLES = {
     FAM_INTERNAL: "Internal model / strategy validators (paper)",
     FAM_FORWARD_TEST: "Pre-registered PICKS forward test (published, not staked)",
     FAM_INPLAY: "In-play slow-state rig (paper) — OWN Phase 1b",
+    FAM_OWN: "OWN bots · one per market, best Estonian book, last 3 h before kick-off (paper)",
 }
 
 
@@ -159,6 +161,12 @@ BOTS: list[BotSpec] = [
     # measuring and neither thought was worth a euro. Pre-registration:
     # dev/active/own-sharp-tight-preregistration.md. PROMOTION REQUIRES
     # margin-corrected own-book CLV > 0 at n>=300; ROI may never promote it.
+    # [[#182]] OWN bot (2026-09-26): ONE bot per market (owner), best clearing Estonian book per selection,
+    # book recorded on the pick. Market label "1x2 · last 3 h" on purpose — the floor is EV vs the v2 anchor
+    # (workers/jobs/own_bots.py, pinned by smoke OWN-BOTS), not pick_triggers' pp floor.
+    BotSpec("bot_own_1x2_v1", FAM_OWN, "1x2 · last 3 h", ANCHOR_SHARP,
+            0.03, 1.01, False,
+            "OWN paper bot (#182): the best Coolbet / Unibet / Epicbet / Tonybet 1X2 price that is EV >= 3% over the v2 anchor (Pinnacle+exchange, else a consensus without that book), < 3 h to kick-off, >= 3 other books confirm the fair price. Book recorded per pick. Judged on clv_cons at the recorded price."),
     BotSpec("bot_trigger_1x2_sharp_tight_v1", FAM_TRIGGER, "1x2", ANCHOR_SHARP,
             0.02, 1.01, False,
             "INSTRUMENT (paper, never placeable). SHARP 1x2 at the TIGHT gate the original 70,200-cell sweep could not express — it swept a constant expected-ROI floor while the live gate is a constant probability-difference floor, and roi_edge = prob_edge x odds makes the latter a CURVE in odds. Gate: P_shin - 1/odds >= 2% AND odds <= 2.50, pooled over Coolbet/Epicbet/Unibet-Site. Backtest n=225 ROI +17.07% CI [+4.18,+29.95] OOS +23.40% — but a 12-day effect whose margin-corrected own-book CLV is -5.4 to -7.6%, so it is being MEASURED, not believed. r2 (#162 W7.6, 2026-09-26): decided by the ONE sharp engine at match time — fair price read then, not from the :05 Stage-A window; the pre-registered gate itself (>= 2%, odds <= 2.50, <= 60 min) is unchanged and it gets NO ceiling.",

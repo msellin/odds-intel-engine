@@ -1511,6 +1511,18 @@ def job_own_bet_board():
     _run_job("own_bet_board", _job_own_bet_board_impl)
 
 
+def _job_own_bots_impl():
+    """[[#182]] (2026-09-26): the OWN bot bot_own_1x2_v1 — best Estonian-book 1X2 price EV >= 3% over the
+    v2 anchor, < 3 h to kick-off, >= 3 books confirm; paper picks into shadow_bets."""
+    from workers.jobs.own_bots import run
+    r = run()
+    return {"stored": r.get("written", 0)}
+
+
+def job_own_bots():
+    _run_job("own_bots", _job_own_bots_impl)
+
+
 # #162 (2026-09-26): the pre-kickoff "PLACE MANUALLY" catch-net is DELETED. It keyed on the retired
 # Mac daemon's heartbeat (frozen since 2026-09-10, so it always read "daemon down"), picked
 # candidates by maturity label and gated them with the old coolbet_placer floor — a second
@@ -3582,6 +3594,9 @@ def main():
     # [[#182]] OWN board — every 10 min, 24/7 (Estonian sweeps are ~hourly, Pinnacle every 30 min)
     scheduler.add_job(job_own_bet_board, IntervalTrigger(minutes=10),
                       id="own_bet_board", name="OWN board every 10 min")
+    # [[#182]] OWN bot — every 10 min, 24/7 (its window is the last 3 h before kick-off)
+    scheduler.add_job(job_own_bots, IntervalTrigger(minutes=10),
+                      id="own_bots", name="OWN bot every 10 min")
 
     # ML-PIPELINE-UNIFY Stage 5a — weekly retrain Sunday 03:00 UTC, runs train.py +
     # compare_models.py. Promotion stays manual (operator flips MODEL_VERSION).

@@ -57404,6 +57404,42 @@ def test_own_board_page():
     return "board on top, shared types only in the client, Log via real-bet API, ledger restart"
 
 
+@test("OWN-BOTS — bot_own_1x2_v1: one bot per market, best clearing Estonian book, < 3 h to kick-off, >= 3 books confirm (#182)")
+def test_own_bots():
+    """[[#182]] the OWN bot. Owner: "better a single bot, or at least one per market, not a bot for every
+    book". Pinned: (1) ONE bot, the book recorded per pick; (2) the pre-registered study's rule — 1X2,
+    EV >= 3% over the v2 anchor (own_bet_board.build — no second computation), < 3 h to kick-off (the only
+    window that held vs the independent close), >= 3 confirming books at >= 0.97x; (3) the best CLEARING,
+    CONFIRMED book wins; (4) paper, experimental, first decision is the pick (DO NOTHING)."""
+    from datetime import datetime, timedelta, timezone
+    from workers.jobs import own_bots as ob
+    assert ob.OWN_BOT == "bot_own_1x2_v1" and set(ob.OWN_BOOKS) == {"Coolbet", "Unibet-Site", "Epicbet", "Tonybet"}
+    assert (ob.MAX_HOURS_TO_KO, ob.CONFIRM_MIN_BOOKS, ob.CONFIRM_RATIO) == (3.0, 3, 0.97)
+    at = datetime(2026, 9, 26, 12, 0, tzinfo=timezone.utc)
+    t = at - timedelta(minutes=10)
+    confirm = {f"B{i}": ([1.85, 3.6, 4.4], t) for i in range(3)}          # home fair ~0.53
+    def row(ko_h, prices, mid="m"):
+        return {"match_id": mid, "market": "1x2", "selection": "home", "kickoff": at + timedelta(hours=ko_h),
+                "prices": prices}
+    ok = {"odds": 2.00, "refusal": None, "p_fair": 0.53, "edge": 0.06, "age_min": 5, "anchor": "sharp_blend"}
+    better = dict(ok, odds=2.05)
+    refused = dict(ok, odds=2.20, refusal="above_ceiling")
+    picks = ob.select([row(2, {"Coolbet": ok, "Epicbet": better, "Unibet-Site": refused})], {("m", "1x2"): confirm}, at)
+    assert len(picks) == 1 and picks[0]["book"] == "Epicbet" and picks[0]["bot"] == ob.OWN_BOT, picks
+    assert ob.select([row(4, {"Coolbet": ok})], {("m", "1x2"): confirm}, at) == [], "outside the last 3 h"
+    two = {k: v for k, v in list(confirm.items())[:2]}
+    assert ob.select([row(2, {"Coolbet": ok})], {("m", "1x2"): two}, at) == [], "needs >= 3 confirming books"
+    low = {f"B{i}": ([2.3, 3.4, 3.2], t) for i in range(3)}                # home fair ~0.43 < 0.97 x 0.53
+    assert ob.select([row(2, {"Coolbet": ok})], {("m", "1x2"): low}, at) == [], "confirmers must agree"
+    src = _engine_path("workers/jobs/own_bots.py").read_text()
+    assert "from workers.jobs.own_bet_board import" in src and "ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection) DO NOTHING" in src
+    mig = _engine_path("supabase/migrations/473_own_bots.sql").read_text()
+    assert "'bot_own_1x2_v1'" in mig and "'experimental', false, false" in mig
+    sched = _engine_path("workers/scheduler.py").read_text()
+    assert '_run_job("own_bots", _job_own_bots_impl)' in sched and 'id="own_bots"' in sched
+    return "one bot, best clearing confirmed book, 3 h window, >= 3 confirmers, paper"
+
+
 @test("MODEL-ACCURACY-JOB — every production probability source scored forward, vs base rate and Pinnacle on the same rows (#153)")
 def test_model_accuracy_job():
     """[[#153]]: /admin/models reads model_accuracy (migration 466), written daily 02:40 by
