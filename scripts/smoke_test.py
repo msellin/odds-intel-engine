@@ -57268,39 +57268,52 @@ def test_footprint_requests_by_caller():
     return "attributed per job, cleared after, merged at flush"
 
 
-@test("OWN-BET-BOARD — Estonian-book prices x Pinnacle fair via the ONE sharp engine; take_at; stale and no-fair never clear (#182)")
+@test("OWN-BET-BOARD — Estonian-book prices x the v2 anchor (Pinnacle+exchange, conflict = no price, consensus without the priced book); take_at; stale never clears (#182)")
 def test_own_bet_board():
     """[[#182]] the OWN board (owner 2026-09-26: "where do I put my real money right now"). Rank =
-    price vs Pinnacle fair AND a bot agrees. Pinned: (1) fair price / freshness / gates come from
-    sharp_engine (no second computation); (2) a stale book quote or a missing Pinnacle line never
-    clears; (3) take_at = (1 + floor) / fair; (4) the books are ACCESSIBLE_BOOKMAKERS; (5) private table,
-    replaced atomically, job every 10 min."""
-    from datetime import datetime, timezone
+    price vs fair AND a bot agrees. Pinned: (1) fair value from the anchor resolver (anchor.py —
+    sharp tier Pinnacle/exchange first, a Pinnacle-vs-exchange CONFLICT gives no price, else a
+    consensus that EXCLUDES the book being priced); price gates from sharp_engine.price_refusal;
+    (2) a stale book quote or a missing anchor never clears; (3) take_at = (1 + floor) / fair;
+    (4) the books are ACCESSIBLE_BOOKMAKERS; (5) private table, replaced atomically, job every 10 min."""
+    from datetime import datetime, timedelta, timezone
     from workers.jobs import own_bet_board as ob
+    from workers.utils.anchor import Anchor
     now = 1_800_000_000.0
+    at = datetime.fromtimestamp(now, tz=timezone.utc)
     ko = now + 5 * 3600
     kick = datetime.fromtimestamp(ko, tz=timezone.utc)
     pick = lambda bot, sel, mid="m1": {"source": "shadow", "pick_id": bot + sel, "bot_name": bot, "match_id": mid,
                                        "market": "1x2", "selection": sel, "pick_time": "2026-09-26 10:00",
                                        "display_name": bot, "status": "testing", "vip": bot == "v",
                                        "kickoff": kick, "home": "A", "away": "B", "league": "L"}
-    pin = {"home": (2.00, now - 600), "draw": (3.60, now - 600), "away": (4.20, now - 600)}
     lines = {("m1", "1x2"): {"ko": ko, "quotes": {
-        "Pinnacle": pin,
-        "Coolbet": {"home": (2.14, now - 1200)},                 # fresh, ~+5.7% over fair (< 8% ceiling)
-        "Epicbet": {"home": (2.40, now - 3 * 3600)}}}}           # higher, but stale
-    rows = ob.build([pick("a", "home"), pick("v", "home"), pick("a", "away", "m2")], lines, now,
-                    ("Coolbet", "Epicbet"))
+        "Coolbet": {"home": (2.14, now - 1200)},                 # fresh, ~+5.9% over fair (< 8% ceiling)
+        "Epicbet": {"home": (2.40, now - 3 * 3600)}}},           # higher, but stale
+             ("m3", "1x2"): {"ko": ko, "quotes": {"Coolbet": {"home": (2.30, now - 600)}}}}
+    fair = Anchor("sharp_blend", {"home": 0.495, "draw": 0.28, "away": 0.225}, 2)
+    anchors = {("m1", "1x2"): {"Coolbet": fair, "Epicbet": fair},
+               ("m2", "1x2"): {"Coolbet": Anchor("none"), "Epicbet": Anchor("none")},
+               ("m3", "1x2"): {"Coolbet": Anchor("sharp_conflict"), "Epicbet": Anchor("sharp_conflict")}}
+    rows = ob.build([pick("a", "home"), pick("v", "home"), pick("a", "away", "m2"), pick("a", "home", "m3")],
+                    lines, now, ("Coolbet", "Epicbet"), anchors)
     r = next(x for x in rows if x["match_id"] == "m1")
     assert r["n_bots"] == 2 and r["bots"][0]["bot"] == "v", "grouped per selection, VIP first"
-    assert r["clears"] and r["best_book"] == "Coolbet", r
+    assert r["clears"] and r["best_book"] == "Coolbet" and r["anchor_source"] == "sharp_blend", r
     assert r["prices"]["Epicbet"]["refusal"] == "stale_quote", "a stale price never clears, however high"
-    assert abs(r["take_at"] - (1 + ob.EDGE_FLOOR) / r["p_fair"]) < 1e-12
-    assert abs(r["best_edge"] - (2.14 * r["p_fair"] - 1)) < 1e-12
+    assert abs(r["take_at"] - (1 + ob.EDGE_FLOOR) / 0.495) < 1e-12
+    assert abs(r["best_edge"] - (2.14 * 0.495 - 1)) < 1e-12
     r2 = next(x for x in rows if x["match_id"] == "m2")
-    assert not r2["clears"] and r2["p_fair"] is None, "no Pinnacle line -> no fair price -> never clears"
+    assert not r2["clears"] and r2["p_fair"] is None, "no anchor -> no fair price -> never clears"
+    r3 = next(x for x in rows if x["match_id"] == "m3")
+    assert not r3["clears"] and r3["prices"]["Coolbet"]["refusal"] == "sharp_conflict" and r3["anchor_source"] == "sharp_conflict"
+    # the consensus tier never contains the book it prices
+    t = at - timedelta(minutes=5)
+    sets = {b: ([2.0, 3.5, 4.0], t) for b in ("B1", "B2", "B3", "B4", "B5", "Coolbet")}
+    per = ob.anchors_for_books(sets, None, ("home", "draw", "away"), ("Coolbet",), at)
+    assert per["Coolbet"].source == "consensus" and "Coolbet" not in per["Coolbet"].books
     src = _engine_path("workers/jobs/own_bet_board.py").read_text()
-    for pin_ in ("from workers.automation.sharp_engine import", "anchor_fair(", "price_refusal(",
+    for pin_ in ("compute_sharp(", "compute_anchor(sets, sides, at=at, exclude_book=b)", "price_refusal(",
                  "ACCESSIBLE_BOOKMAKERS", 'DELETE FROM own_bet_board', "coalesce(d.status, '') <> 'retired'"):
         assert pin_ in src, pin_
     sched = _engine_path("workers/scheduler.py").read_text()
@@ -57308,7 +57321,8 @@ def test_own_bet_board():
     assert 'IntervalTrigger(minutes=10),\n                      id="own_bet_board"' in sched
     mig = _engine_path("supabase/migrations/470_own_bet_board.sql").read_text()
     assert "REVOKE ALL ON public.own_bet_board FROM anon, authenticated" in mig and "TO anon" not in mig
-    return "synthetic board: clears/stale/no-fair/take_at pinned; sharp engine reused; private, 10-min job"
+    assert "anchor_source" in _engine_path("supabase/migrations/471_own_bet_board_anchor.sql").read_text()
+    return "synthetic board: clears/stale/no-anchor/conflict/take_at pinned; consensus excludes the priced book"
 
 
 @test("MODEL-ACCURACY-JOB — every production probability source scored forward, vs base rate and Pinnacle on the same rows (#153)")
