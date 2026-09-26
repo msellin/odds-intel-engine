@@ -56894,5 +56894,21 @@ def test_bot_record_restart():
     assert not lost, f"a SENT pick fell out of the record: {lost}"
     return "pre-restart unsent picks out, every sent pick in"
 
+@test("PANDAS-304-EXCLUDED — requirements.txt excludes pandas 3.0.4 (segfaults on tz-aware datetimes on the VPS) (#145)")
+def test_pandas_304_excluded():
+    """[[#145]] pandas 3.0.4 segfaults (exit 139) on take / groupby / merge over a tz-aware datetime
+    column on the VPS (Linux, Python 3.14.4, numpy 2.4.6) — one such call in an in-process job kills
+    oddsintel-scheduler and every job with it. Reproduced 2026-09-26; 3.0.2 / 3.0.3 / 3.0.5 / 3.0.6
+    clean on the same box. The macOS wheel does NOT crash, so a local run proves nothing — the
+    pin is the guard, and CI (Linux) fails here if 3.0.4 is ever installed again."""
+    import re
+    req = _engine_path("requirements.txt").read_text()
+    line = next(l for l in req.splitlines() if re.match(r"^pandas\b", l))
+    assert "!=3.0.4" in line, f"pandas 3.0.4 must stay excluded: {line}"
+    import pandas
+    assert pandas.__version__ != "3.0.4", "pandas 3.0.4 is installed — it segfaults on tz-aware datetimes"
+    return f"{line.strip()}; installed {pandas.__version__}"
+
+
 if __name__ == "__main__":
     main()

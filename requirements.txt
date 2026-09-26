@@ -11,7 +11,11 @@
 # braces rather than the fix — but an unbounded major-version range on a C
 # extension is how a working box silently becomes a broken one. Raise the
 # ceiling deliberately, after testing, not by redeploying.
-pandas>=2.2.0,<3.1.0
+#
+# #145 (2026-09-26): 3.0.4 itself is excluded. Reproduced on the VPS: a tz-aware
+# datetime take / groupby / merge exits 139 on 3.0.4; 3.0.2, 3.0.3, 3.0.5, 3.0.6
+# run clean on the same box. The macOS wheel does not crash, so test on Linux.
+pandas>=2.2.0,<3.1.0,!=3.0.4
 numpy>=2.0.0,<3.0.0
 
 # HTTP & scraping

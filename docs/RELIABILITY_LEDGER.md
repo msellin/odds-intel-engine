@@ -1438,6 +1438,14 @@ pins both. Rule for new jobs that do heavy pandas / numpy / XGBoost work: run th
 do not put tz-aware datetimes in DataFrames on pandas 3.0.4. Pinning pandas to 3.0.2 was NOT done here
 — it changes the runtime of every job at once and deserves its own verified change.
 
+**Closed 2026-09-26 ([[#145]]).** Reproduced on the VPS (exit 139 on 3.0.4, every run); 3.0.2, 3.0.3,
+3.0.5 and 3.0.6 run the same repro clean on the same box, and the **macOS wheel of 3.0.4 does not crash**
+(a local test proves nothing here). `requirements.txt` now reads `pandas>=2.2.0,<3.1.0,!=3.0.4`; the deploy's
+`pip install -r` moves the VPS to 3.0.6, which was installed with the full requirements in a throwaway VPS venv
+and imports the scheduler, the morning chain and the betting pipeline. Smoke `PANDAS-304-EXCLUDED` (fails in
+CI if 3.0.4 is ever installed again); verify-queue `ops/verify/145-pandas-pin.yml` re-runs the repro on the box.
+The subprocess rule for heavy jobs above still stands.
+
 ## 25. A toggle with no reason field — the note and the flag disagree (closed 2026-09-24)
 
 **The pattern.** Migration 343 found `bot_coolbet_1x2_model_v1` carrying the note "OFF pending dry-run"
