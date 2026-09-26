@@ -737,17 +737,17 @@ decides where its picks go. Every public surface reads it; no second per-bot set
 | status | /admin/bots | /performance | /picks + public Telegram | own record | headline totals |
 |---|---|---|---|---|---|
 | `experimental` | ✅ | — | — nothing sent (not even pending rows are anon-readable) | admin only | — |
-| `testing` | ✅ | ✅ row marked TESTING | ✅ /picks (every pick) · Telegram only at **EV ≥ 5%** ([[#174]]) | ✅ every recorded pick counted | — |
+| `testing` | ✅ | ✅ row marked TESTING | ✅ /picks (every pick) · Telegram only at **EV ≥ 7%** ([[#174]]; 5% until [[#184]]) | ✅ every recorded pick counted | — |
 | `active` | ✅ | ✅ "counts in the totals above" | ✅ /picks + every pick to Telegram | ✅ | ✅ **the headline = ACTIVE only** |
 | ⭐ VIP (a **channel** on top of a status, "VIP · TESTING") | ✅ | ✅ settled picks only | — (paid channel only) | ✅ | — never |
 | `retired` | ✅ retired tab | retired section (#157) | — | picks keep counting in the totals | — |
 
 **Public Telegram rule ([[#174]], owner 2026-09-26):** the channel carries every ACTIVE pick (was BETA / CALIBRATED before [[#175]]) plus
-TESTING picks at EV ≥ 5% (EV = the bot's own probability × the published odds − 1: `calibrated_prob × odds_at_pick`
+TESTING picks at EV ≥ 7% (**raised from 5% on 2026-09-26, [[#184]]** — matches /picks' `testing_min_ev`; 29 TESTING posts in 2 days → 9, and the consensus arms, capped at 6% EV, no longer reach the channel) (EV = the bot's own probability × the published odds − 1: `calibrated_prob × odds_at_pick`
 for model bots, `p_sharp × odds` = `edge` for forward-test arms), never VIP-held (#164). ONE function
-`workers/utils/bot_status.public_channel_skip_reason` (threshold `PUBLIC_TESTING_MIN_EV = 0.05`, reads
+`workers/utils/bot_status.public_channel_skip_reason` (threshold `PUBLIC_TESTING_MIN_EV = 0.07`, reads
 `HEADLINE_STATUSES`), used by both public senders and re-checked in `pick_sender.send_pick`; a filtered pick is
-recorded in `pick_sends` as `skipped · testing_below_ev5`. /picks is unchanged. The Coolbet real-money edge floors are
+recorded in `pick_sends` as `skipped · testing_below_ev5` (a stable code — it means below the TESTING floor, now 7%). /picks is unchanged. The Coolbet real-money edge floors are
 NOT on this path (placement + operator prompt only). Smoke `PUBLIC-TELEGRAM-ONE-RULE-EV5`.
 
 **Status line on every public pick ([[#183]], owner 2026-09-26):** the channel mixed ACTIVE and TESTING picks from

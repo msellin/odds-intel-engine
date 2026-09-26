@@ -5,7 +5,7 @@ decides where its picks go. No second per-bot switch may drift from it:
 
     EXPERIMENTAL  admins only (/admin/bots) · nothing sent · nothing public (not even pending rows)
     TESTING       row on /performance marked TESTING · every pick on /picks · public Telegram only
-                  at EV >= 5% ([[#174]], public_channel_skip_reason below)
+                  at EV >= 7% ([[#174]]; 5% until [[#184]] 2026-09-26; public_channel_skip_reason below)
                   · counted in its own record · NOT in the headline totals
     ACTIVE        sent (/picks + every pick to public Telegram) · own record · COUNTS IN THE
                   HEADLINE TOTALS. [[#175]] (owner 2026-09-26, migration 462): BETA and CALIBRATED
@@ -105,7 +105,10 @@ def public_status_line(status: str | None, display_name: str | None) -> str:
 # /picks shows EVERY pick of a TESTING / ACTIVE bot (unchanged). The public Telegram
 # channel is a stricter subset, so each post feels special:
 #   * every pick of an ACTIVE bot (BETA / CALIBRATED before [[#175]]), plus
-#   * a TESTING pick only when its EV >= PUBLIC_TESTING_MIN_EV (5%), where
+#   * a TESTING pick only when its EV >= PUBLIC_TESTING_MIN_EV (7% since [[#184]], 2026-09-26 —
+#     was 5%; raised to match /picks' picks_page_rule.testing_min_ev after 29 TESTING posts in 2 days,
+#     17 of them O/U-model picks in one minute; consensus picks, capped at 6% EV, no longer reach
+#     the channel; the most-profitable-config audit is [[#185]]), where
 #     EV = the bot's own probability x the pick's published odds - 1
 #     (simulated_bets: calibrated_prob x odds_at_pick; picks_forward_test: fair_prob (= p_sharp)
 #     x odds, i.e. its `edge` column);
@@ -115,7 +118,9 @@ def public_status_line(status: str | None, display_name: str | None) -> str:
 # enforced again inside pick_sender.send_pick for the public channel, so no third caller can post a
 # TESTING pick without passing its EV. The Coolbet real-money edge floors (13pp 1x2 / 8pp O/U) are
 # 🤖 OWN placement gates and are NOT part of this rule (they stay on the placer / operator prompt).
-PUBLIC_TESTING_MIN_EV = 0.05
+PUBLIC_TESTING_MIN_EV = 0.07
+# A stable CODE, kept as written when the floor was 5%: the scheduler matches 'testing_' and earlier
+# pick_sends rows carry it. It means "below the TESTING EV floor", whatever the floor is.
 SKIP_TESTING_BELOW_EV = "testing_below_ev5"
 SKIP_TESTING_EV_UNKNOWN = "testing_ev_unknown"
 

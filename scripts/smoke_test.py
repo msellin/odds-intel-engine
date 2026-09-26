@@ -52011,7 +52011,7 @@ def test_admin_topbar_palette_table():
     nav = _web_path("src/components/admin/admin-nav.ts").read_text(encoding="utf-8")
     # #162 W6.8 (2026-09-26): "Real bets" left the sidebar — the ledger is the Real money tab of
     # /admin/bots, reachable from the ⌘K Actions (REAL-BETS-FOLDED-INTO-BOTS).
-    for entry in ('label: "Pick queue"', 'label: "Jobs"', 'href: "/admin/activity"'):
+    for entry in ('label: "Where to bet"', 'label: "Jobs"', 'href: "/admin/activity"'):
         assert entry in nav, entry
     assert 'label: "Real bets"' not in nav
     assert "/admin/place" not in nav and "unused: true" not in nav
@@ -56992,7 +56992,7 @@ def test_account_matcher_canonical_ou():
     t1 = {"match_name": "Arsenal - Chelsea", "market": "Match Result", "selection": "Arsenal"}
     assert m(t1, row("1x2", "home")) and m(t1, row("1x2", "away")) is None
 
-@test("PUBLIC-TELEGRAM-ONE-RULE-EV5 — #174: one public-Telegram rule (ACTIVE + TESTING at EV >= 5%), both senders use it, no Coolbet floor on the public path")
+@test("PUBLIC-TELEGRAM-ONE-RULE-EV5 — #174: one public-Telegram rule (ACTIVE + TESTING at the EV floor, 7% since #184), both senders use it, no Coolbet floor on the public path")
 def test_public_telegram_one_rule_ev5():
     """[[#174]] owner decision 2026-09-26. The public Telegram channel carries every BETA /
     CALIBRATED pick plus TESTING picks at EV >= 5% (bot probability x published odds - 1); /picks
@@ -57010,17 +57010,18 @@ def test_public_telegram_one_rule_ev5():
     import workers.automation.coolbet_signaler as sig
 
     # (1) the rule
-    assert bs.PUBLIC_TESTING_MIN_EV == 0.05
+    assert bs.PUBLIC_TESTING_MIN_EV == 0.07, "[[#184]] 2026-09-26: raised 5% -> 7% to match /picks"
     R = bs.public_channel_skip_reason
     assert R("active", None) is None and R("active", -0.2) is None, "ACTIVE: every pick ([[#175]]: was BETA/CALIBRATED)"
     assert R("beta", 0.5).startswith("not_distributed") and R("calibrated", 0.5).startswith("not_distributed"), "merged away (#175)"
-    assert R("testing", 0.05) is None and R("testing", Decimal("0.0500")) is None, "EV exactly 5% MEETS the bar"
-    assert R("testing", 0.0499999999999) is None, "float noise at the bar must not drop a pick"
-    assert R("testing", Decimal("0.0499")) == "testing_below_ev5"
+    assert R("testing", 0.07) is None and R("testing", Decimal("0.0700")) is None, "EV exactly 7% MEETS the bar"
+    assert R("testing", 0.0699999999999) is None, "float noise at the bar must not drop a pick"
+    assert R("testing", Decimal("0.0699")) == "testing_below_ev5", "stable code: below the TESTING floor"
+    assert R("testing", 0.06) == "testing_below_ev5", "[[#184]] 6% no longer reaches the channel"
     assert R("testing", None) == "testing_ev_unknown" and R("testing", "x") == "testing_ev_unknown", "fail closed"
     assert R("experimental", 0.5).startswith("not_distributed") and R("retired", 0.5).startswith("not_distributed")
     assert R("testing", 0.5, sent_public=False).startswith("not_distributed"), "VIP (sent_public false) never public"
-    assert bs.public_channel_eligible("testing", 0.06) and not bs.public_channel_eligible("testing", 0.04)
+    assert bs.public_channel_eligible("testing", 0.08) and not bs.public_channel_eligible("testing", 0.06)
 
     # (2) send_pick enforces it on the PUBLIC channel only, and records the reason
     sent, recorded = [], []
@@ -57039,7 +57040,7 @@ def test_public_telegram_one_rule_ev5():
         assert ("skipped", "testing_below_ev5") in recorded, "the skip must be recorded in pick_sends"
         r = ps.send_pick("public", "bot_t", "simulated_bets", "e2", "x")
         assert r.reason == "testing_ev_unknown" and not sent, "a TESTING public pick with no EV is refused"
-        r = ps.send_pick("public", "bot_t", "picks_forward_test", "e3", "x", ev=Decimal("0.061"))
+        r = ps.send_pick("public", "bot_t", "picks_forward_test", "e3", "x", ev=Decimal("0.071"))
         assert r.status == "sent" and len(sent) == 1, r
         r = ps.send_pick("vip_channel", "bot_t", "simulated_bets", "e4", "x")
         assert r.status == "sent", "the EV bar is a PUBLIC-channel rule only"
@@ -57067,7 +57068,7 @@ def test_public_telegram_one_rule_ev5():
     ko = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
     row = {"simulated_bet_id": "x", "match_id": "m", "market": "over_under_35", "selection": "under",
            "odds_at_pick": Decimal("1.60"), "edge_percent": Decimal("0.04"),
-           "calibrated_prob": Decimal("0.6625"), "stake": 1, "model_probability": Decimal("0.6625"),
+           "calibrated_prob": Decimal("0.6750"), "stake": 1, "model_probability": Decimal("0.6750"),
            "kelly_fraction": None, "bot_id": "b", "recommended_bookmaker": "Coolbet",
            "bot_name": "bot_v10_ou_comb_v1", "maturity": "testing", "status": "testing",
            "match_date": ko, "coolbet_match_id": None, "home_team": "H", "away_team": "A",
@@ -57080,8 +57081,9 @@ def test_public_telegram_one_rule_ev5():
     finally:
         sig.execute_query = orig
     assert len(out) == 2 and not any(c["clears_placement_floor"] for c in out), "4pp is under the 8pp placement floor"
-    assert abs(out[0]["ev"] - 0.06) < 1e-9 and sig.is_public_eligible(out[0]), (
-        "a TESTING pick at EV 6% under the placement floor must still be public-eligible")
+    # [[#184]] the TESTING floor is 7% since 2026-09-26: an 8% EV pick under the 8pp placement floor.
+    assert abs(out[0]["ev"] - 0.08) < 1e-9 and sig.is_public_eligible(out[0]), (
+        "a TESTING pick at EV 8% under the placement floor must still be public-eligible")
     assert not sig.is_public_eligible(out[1]), "EV 4% TESTING pick: /picks only, not Telegram"
 
     # (5) the O/U twin's other lines are public markets with their own labels
@@ -57089,7 +57091,7 @@ def test_public_telegram_one_rule_ev5():
     assert sig._format_market_public("over_under_35", "under") == "Under 3.5 goals"
     assert sig._format_market_public("over_under_15", "over") == "Over 1.5 goals"
     assert sig._format_market_public("over_under_25", "over") == "Over 2.5 goals"
-    return "one rule, both senders, EV5 pinned, placement floor operator-only"
+    return "one rule, both senders, TESTING floor (7%, #184) pinned, placement floor operator-only"
 
 
 
@@ -57344,6 +57346,11 @@ def test_own_bet_board():
     assert r["clears"] and r["best_book"] == "Coolbet" and r["anchor_source"] == "sharp_blend", r
     assert r["prices"]["Epicbet"]["refusal"] == "stale_quote", "a stale price never clears, however high"
     assert abs(r["take_at"] - (1 + ob.EDGE_FLOOR) / 0.495) < 1e-12
+    assert r["prices"]["Coolbet"]["take_at"] == round((1 + ob.EDGE_FLOOR) / 0.495, 3), "per-book take-at"
+    # per-book anchors differ (each excludes itself) -> the headline take-at is the STRICTEST bar
+    lo, hi = Anchor("consensus", {"home": 0.50, "draw": 0.28, "away": 0.22}, 5), Anchor("consensus", {"home": 0.48, "draw": 0.29, "away": 0.23}, 5)
+    rr = ob.build([pick("a", "home")], lines, now, ("Coolbet", "Epicbet"), {("m1", "1x2"): {"Coolbet": lo, "Epicbet": hi}})[0]
+    assert abs(rr["take_at"] - (1 + ob.EDGE_FLOOR) / 0.48) < 1e-12, rr["take_at"]
     assert abs(r["best_edge"] - (2.14 * 0.495 - 1)) < 1e-12
     r2 = next(x for x in rows if x["match_id"] == "m2")
     assert not r2["clears"] and r2["p_fair"] is None, "no anchor -> no fair price -> never clears"
@@ -57365,6 +57372,26 @@ def test_own_bet_board():
     assert "REVOKE ALL ON public.own_bet_board FROM anon, authenticated" in mig and "TO anon" not in mig
     assert "anchor_source" in _engine_path("supabase/migrations/471_own_bet_board_anchor.sql").read_text()
     return "synthetic board: clears/stale/no-anchor/conflict/take_at pinned; consensus excludes the priced book"
+
+
+@test("OWN-BOARD-PAGE — /admin/shadow-bots opens with the OWN board (Where to bet), logs bets, ledger restarted 2026-09-26 (#182)")
+def test_own_board_page():
+    """[[#182]] web half. The page reads own_bet_board server-side (service client, private table), the
+    client half imports only the shared types (a server import pulled next/headers into the client bundle
+    once already), the Log button writes through /api/admin/real-bet, and the Real money ledger + the
+    Overview's 30-day window both start at LEDGER_RESET_AT (older rows hidden, never deleted)."""
+    loader = _web_path("src/lib/own-board.ts").read_text(encoding="utf-8")
+    assert '.from("own_bet_board")' in loader and "createServerServiceClient" in loader
+    ui = _web_path("src/components/own-board/own-board.tsx").read_text(encoding="utf-8")
+    assert '"use client"' in ui and '@/lib/own-board"' not in ui and "@/lib/own-board-shared" in ui
+    assert '"/api/admin/real-bet"' in ui and "take_at" in ui and "LAST_WINDOW_H = 3" in ui
+    page = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text(encoding="utf-8")
+    assert "<OwnBoard" in page and "loadOwnBoard()" in page and 'title="Where to bet"' in page
+    money = _web_path("src/lib/admin-money.ts").read_text(encoding="utf-8")
+    assert 'LEDGER_RESET_AT = "2026-09-26T00:00:00Z"' in money and "Date.parse(LEDGER_RESET_AT)" in money
+    view = _web_path("src/app/(app)/admin/bots/money-view.tsx").read_text(encoding="utf-8")
+    assert "b.placedAt >= LEDGER_RESET_AT" in view and "section=money&all=1" in view
+    return "board on top, shared types only in the client, Log via real-bet API, ledger restart"
 
 
 @test("MODEL-ACCURACY-JOB — every production probability source scored forward, vs base rate and Pinnacle on the same rows (#153)")

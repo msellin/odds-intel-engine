@@ -1293,7 +1293,7 @@ def main() -> int:
                       skip_reason=f"held_back: {c['held_back_reason']}", **_kw)
             continue
         # [[#174]] THE public-Telegram rule (bot_status.public_channel_skip_reason, applied in
-        # send_pick from `ev`): these bots are TESTING, so only EV >= 5% (edge = p_sharp x odds - 1)
+        # send_pick from `ev`): a TESTING bot's pick only at EV >= PUBLIC_TESTING_MIN_EV (7% since #184; consensus is capped at 6%, so never) (edge = p_sharp x odds - 1)
         # is posted; below that the pick stays recorded (and on /picks), skip recorded in pick_sends.
         _ps = send_pick(CHANNEL_PUBLIC, _bot, "picks_forward_test", pick_id, render(c),
                         ev=c.get("edge"), **_kw)

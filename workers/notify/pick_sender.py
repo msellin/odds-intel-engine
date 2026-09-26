@@ -12,7 +12,7 @@ hands it (channel, bot, pick ref, text) and it:
   2. checks the bot's distribution (view `bot_distribution`, #155): `sent_public` for the
      public channel, `vip_channel` for the VIP channel and the DMs; for the PUBLIC channel also
      THE public-Telegram rule ([[#174]], `bot_status.public_channel_skip_reason`): ACTIVE
-     always ([[#175]]: was BETA / CALIBRATED), TESTING only at EV >= 5% (callers pass `ev`);
+     always ([[#175]]: was BETA / CALIBRATED), TESTING only at EV >= 7% ([[#184]]; was 5%) (callers pass `ev`);
   3. claims a `pick_sends` row (migration 457) BEFORE the send and finalises it after
      (message id / recipients, sent / failed + reason); skips are recorded with their reason;
   4. dedupes in the DB (unique on channel + pick ref), so a scheduler restart can never
@@ -87,7 +87,7 @@ def _pause_block() -> Optional[str]:
 def _distribution_block(channel: str, bot: str, ev=None) -> Optional[str]:
     """None = the bot's status allows this channel. A reason string = do not send.
     [[#174]] for the PUBLIC channel the bot's status must also pass THE public-Telegram rule
-    (bot_status.public_channel_skip_reason): ACTIVE always, TESTING only at EV >= 5%.
+    (bot_status.public_channel_skip_reason): ACTIVE always, TESTING only at EV >= PUBLIC_TESTING_MIN_EV (7%).
     A TESTING pick sent without its `ev` is refused (fail closed)."""
     col = CHANNEL_DISTRIBUTION[channel]
     try:
@@ -216,7 +216,7 @@ def send_pick(channel: str, bot: str, pick_table: str, pick_id, text: str, *,
     read at the start of its pass) — nothing is sent, the skip is recorded with that reason, so
     pick_sends also says why a recorded pick never went out. It can only ever PREVENT a send.
     `ev`: the pick's expected return (bot probability x published odds - 1). Required for a
-    TESTING bot's pick on the PUBLIC channel ([[#174]] — sent only at EV >= 5%)."""
+    TESTING bot's pick on the PUBLIC channel ([[#174]] — sent only at EV >= PUBLIC_TESTING_MIN_EV, 7% since [[#184]])."""
     if channel not in CHANNEL_DISTRIBUTION or pick_table not in PICK_TABLES:
         raise ValueError(f"send_pick: unknown channel/table {channel!r}/{pick_table!r}")
     key = (channel, pick_table, str(pick_id))

@@ -190,7 +190,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 ### Telegram public channel (added 2026-06-24)
 - `@oddsintelpicks` — public, free, anyone can join
 - Bot (renamed from "Coolbet Bot" to "OddsIntel" via @BotFather) is admin with Post Messages
-- ⚠️ CHANGED: since [[#174]]/[[#175]] (2026-09-26) the channel carries every ACTIVE pick + TESTING picks at EV ≥ 5% (BETA/CALIBRATED merged into ACTIVE) — `docs/SYSTEM_MAP.md` "Lifecycle". History:
+- ⚠️ CHANGED: since [[#174]]/[[#175]] (2026-09-26) the channel carries every ACTIVE pick + TESTING picks at EV ≥ 7% (5% until [[#184]], 2026-09-26; BETA/CALIBRATED merged into ACTIVE) — `docs/SYSTEM_MAP.md` "Lifecycle". History:
 - Pipeline: every calibrated-maturity pre-match pick (1x2/OU/BTTS) auto-posts via `coolbet_signaler.py` → `workers.notify.telegram.send_telegram_public()`
 - Beta/active/experimental picks stay in operator chat only — public channel is curated, not the firehose
 

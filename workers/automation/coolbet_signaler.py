@@ -47,7 +47,7 @@ use DIFFERENT gates, because they do different jobs.
   * PUBLIC channel (👥 PICKS) — THE public-Telegram rule
     `bot_status.public_channel_skip_reason`, shared with the forward-test
     publisher and re-checked inside `pick_sender.send_pick`: every ACTIVE
-    pick (BETA / CALIBRATED before [[#175]] merged them), plus TESTING picks at EV >= 5% (calibrated_prob x
+    pick (BETA / CALIBRATED before [[#175]] merged them), plus TESTING picks at EV >= 7% (#184; was 5%) (calibrated_prob x
     odds_at_pick - 1). NO Coolbet real-money floor: those floors (13pp 1x2 /
     8pp O/U) kept every pick of the EV-unit TESTING bots (bot_v10_1x2_newplus_v1,
     bot_v10_ou_comb_v1) off the channel — 0 of 103 upcoming picks — although
@@ -270,7 +270,7 @@ def is_public_eligible(b: dict) -> bool:
 
     [[#174]] (owner 2026-09-26): and the canonical row must pass THE public-Telegram
     rule (bot_status.public_channel_eligible) — ACTIVE always, TESTING only at
-    EV >= 5%. The query orders the group so the canonical row passes iff any row does.
+    EV >= PUBLIC_TESTING_MIN_EV (7%). The query orders the group so the canonical row passes iff any row does.
     No Coolbet placement floor here (that is `clears_placement_floor`, operator only).
     """
     return (bool(b.get("group_sends_public"))

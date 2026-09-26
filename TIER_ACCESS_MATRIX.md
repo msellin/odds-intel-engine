@@ -306,7 +306,7 @@ tier-dependent channel). Source: engine view `bot_distribution` (migrations 437 
 | Status | /performance | /picks | Public Telegram | Own record | Headline totals |
 |---|---|---|---|---|---|
 | EXPERIMENTAL | ✗ (admin only) | ✗ | ✗ | admin only | ✗ |
-| TESTING | ✓ marked TESTING | ✓ (every pick) | ✓ only at EV ≥ 5% ([[#174]], 2026-09-26) | ✓ | ✗ |
+| TESTING | ✓ marked TESTING | ✓ (every pick) | ✓ only at EV ≥ 7% ([[#174]]; 5% until [[#184]], 2026-09-26) | ✓ | ✗ |
 | ACTIVE | ✓ "counts in the totals above" | ✓ | ✓ (every pick) | ✓ | ✓ (headline = ACTIVE only) |
 | VIP · <status> | ✓ settled only | ✗ | ✗ (Pro/Elite DM + private channel) | ✓ | ✗ |
 

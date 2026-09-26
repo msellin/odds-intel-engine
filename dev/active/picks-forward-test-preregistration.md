@@ -632,6 +632,11 @@ is **still claimed, recorded, counted and shown on /picks** exactly as before; i
 stopping rule, n and the public list `/picks` (every TESTING / BETA / CALIBRATED pick). The test measures the
 RULE's picks; the channel is now a subset of them.
 
+**AMENDED 2026-09-26 ([[#184]], owner) — the Telegram floor is now EV ≥ 7%** (it matches /picks' `testing_min_ev`).
+Still a distribution change only. Two consequences: the consensus arm (edge ceiling 6%) no longer reaches Telegram
+at all, and `bot_sharp_1x2_v1` is ACTIVE since [[#183]] (migration 472), so its picks are all sent regardless of EV.
+Nothing about the rule, n or the stop conditions changes.
+
 **Readout consequence.** "What a Telegram subscriber received" = rows with `telegram_message_id IS NOT NULL`;
 "what a /picks reader could have taken" = rows not held back (`held_back_reason IS NULL`). The rule's own result
 includes every claimed row. Smoke `PUBLIC-TELEGRAM-ONE-RULE-EV5`.

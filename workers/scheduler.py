@@ -2578,7 +2578,7 @@ def job_publish_picks_forward_test():
     # `skip` = this pass already decided not to send: recorded with the reason, never sent.
     #
     # [[#174]] (owner 2026-09-26) — THE public-Telegram rule: a TESTING forward-test bot's pick
-    # reaches the channel only at EV >= 5% (bot_sharp_1x2_v1 is ACTIVE since #183 — all its picks go) (EV = fair_prob (p_sharp) x odds - 1, the
+    # reaches the channel only at EV >= 7% (PUBLIC_TESTING_MIN_EV; 5% until #184) (bot_sharp_1x2_v1 is ACTIVE since #183 — all its picks go) (EV = fair_prob (p_sharp) x odds - 1, the
     # candidate's `edge`). send_pick applies bot_status.public_channel_skip_reason itself from
     # the `ev` passed here and records 'testing_below_ev5'. The pick is still claimed and on
     # /picks — only Telegram is filtered. `ev_filtered` = pick ids held back by that rule, so
