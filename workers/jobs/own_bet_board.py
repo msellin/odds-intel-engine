@@ -39,6 +39,13 @@ log = logging.getLogger(__name__)
 
 EDGE_FLOOR = 0.03        # EV vs Pinnacle fair — the per-book sharp triggers' floor
 KO_BLOCK_MIN = 3         # the placer refuses inside this; so does the board
+# MARKET SPLIT (owner, 2026-09-26, EBK v GrIFK): Coolbet / Epicbet / Unibet had EBK at 1.33-1.61 while
+# Pinnacle and eight global books had ~1.92 — the local books knew something the global feed did not yet,
+# and the anchor made their DRAW look like +6..+24% value. When the median of OUR books' own de-vigged lines
+# is this far from the anchor on ANY side (prob points), the fair price is not trusted: no price, no pick.
+# Normal soft-book disagreement is a few points; the phantom was ~0.15.
+SPLIT_MAX_GAP = 0.08
+SPLIT_MIN_BOOKS = 2
 BOARD_RULE = SharpRule(bot_name="own_board", books=None, edge_unit="ev", edge_floor=EDGE_FLOOR)
 
 
@@ -67,6 +74,26 @@ def line_anchors(mid: str, market: str, books: tuple[str, ...], at) -> dict:
     sets = load_sets(mid, market, sides, at=at)
     ex = load_exchange(mid, market, sides, at=at) if market in _EX_MARKETS else None
     return anchors_for_books(sets, ex, sides, books, at)
+
+
+def market_split(quotes: dict, books: tuple[str, ...], sides: tuple[str, ...] | None,
+                 anchor_probs: dict | None) -> float | None:
+    """Pure: the largest side gap between the median of OUR books' de-vigged complete lines and the anchor,
+    or None when fewer than SPLIT_MIN_BOOKS of our books have a complete line (or there is no anchor)."""
+    from statistics import median
+    from workers.model.devig import fair_prob
+    if not sides or not anchor_probs or any(s not in anchor_probs for s in sides):
+        return None
+    ps = []
+    for bk in books:
+        q = quotes.get(bk) or {}
+        if all(s in q for s in sides):
+            p = fair_prob([q[s][0] for s in sides])
+            if p:
+                ps.append(p)
+    if len(ps) < SPLIT_MIN_BOOKS:
+        return None
+    return max(abs(median(p[i] for p in ps) - anchor_probs[s]) for i, s in enumerate(sides))
 
 
 def load_picks() -> list[dict]:
@@ -110,6 +137,8 @@ def build(picks: list[dict], lines: dict, now_ts: float, books: tuple[str, ...],
         ko = line.get("ko") or p0["kickoff"].timestamp()
         pin_q = (quotes.get(PIN) or {}).get(sel)
         per_book = anchors.get((mid, market)) or {}
+        _a0 = next((x for x in per_book.values() if x is not None and x.probs), None)
+        split_gap = market_split(quotes, books, market_sides(market), _a0.probs if _a0 else None)
         prices = {}
         best = None
         first_anchor = None
@@ -128,7 +157,9 @@ def build(picks: list[dict], lines: dict, now_ts: float, books: tuple[str, ...],
             odds, ts = q
             age = round((now_ts - ts) / 60.0, 1)
             edge = edge_of("ev", p, odds) if p else None
-            if a is not None and a.source == "sharp_conflict":
+            if split_gap is not None and split_gap > SPLIT_MAX_GAP:
+                why = "market_split"
+            elif a is not None and a.source == "sharp_conflict":
                 why = "sharp_conflict"
             elif not p:
                 why = "no_fair_price"
@@ -155,6 +186,7 @@ def build(picks: list[dict], lines: dict, now_ts: float, books: tuple[str, ...],
             "take_at": max(take_ats) if take_ats else None,
             "pin_age_min": a_row.max_age_min if a_row is not None else None,
             "anchor_source": src, "anchor_books": a_row.n_books if a_row is not None else 0,
+            "split_gap": round(split_gap, 4) if split_gap is not None else None,
             "prices": prices,
             "best_book": best[0] if best else None, "best_odds": best[1] if best else None,
             "best_edge": best[2] if best else None, "clears": best is not None,

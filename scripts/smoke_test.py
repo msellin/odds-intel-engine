@@ -57386,13 +57386,21 @@ def test_own_bet_board():
     assert not r2["clears"] and r2["p_fair"] is None, "no anchor -> no fair price -> never clears"
     r3 = next(x for x in rows if x["match_id"] == "m3")
     assert not r3["clears"] and r3["prices"]["Coolbet"]["refusal"] == "sharp_conflict" and r3["anchor_source"] == "sharp_conflict"
+    # MARKET SPLIT (EBK v GrIFK, 2026-09-26): our books' whole line far from the anchor -> no price
+    q_ebk = {"Coolbet": {"home": (1.61, now), "draw": (4.35, now), "away": (4.55, now)},
+             "Epicbet": {"home": (1.47, now), "draw": (4.70, now), "away": (5.04, now)}}
+    pin_like = {"home": 0.50, "draw": 0.25, "away": 0.25}
+    assert ob.market_split(q_ebk, ("Coolbet", "Epicbet"), ("home", "draw", "away"), pin_like) > ob.SPLIT_MAX_GAP
+    rs = ob.build([pick("a", "draw", "ms")], {("ms", "1x2"): {"ko": ko, "quotes": q_ebk}}, now, ("Coolbet", "Epicbet"),
+                  {("ms", "1x2"): {"Coolbet": Anchor("consensus", pin_like, 9), "Epicbet": Anchor("consensus", pin_like, 9)}})[0]
+    assert not rs["clears"] and rs["prices"]["Epicbet"]["refusal"] == "market_split", rs["prices"]
     # the consensus tier never contains the book it prices
     t = at - timedelta(minutes=5)
     sets = {b: ([2.0, 3.5, 4.0], t) for b in ("B1", "B2", "B3", "B4", "B5", "Coolbet")}
     per = ob.anchors_for_books(sets, None, ("home", "draw", "away"), ("Coolbet",), at)
     assert per["Coolbet"].source == "consensus" and "Coolbet" not in per["Coolbet"].books
     src = _engine_path("workers/jobs/own_bet_board.py").read_text()
-    for pin_ in ("compute_sharp(", "compute_anchor(sets, sides, at=at, exclude_book=b)", "price_refusal(",
+    for pin_ in ("compute_sharp(", "compute_anchor(sets, sides, at=at, exclude_book=b)", "price_refusal(", "market_split(",
                  "ACCESSIBLE_BOOKMAKERS", 'DELETE FROM own_bet_board', "coalesce(d.status, '') <> 'retired'"):
         assert pin_ in src, pin_
     sched = _engine_path("workers/scheduler.py").read_text()
