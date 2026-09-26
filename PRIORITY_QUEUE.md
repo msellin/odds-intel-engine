@@ -247,7 +247,7 @@
 | **Owner** | P2 | #171 | Lead /picks with the sharp-anchor CLV? tight naming; which sharp bots may stake; retire `bot_unified_gate_1x2_paper_v1` (#172) | 🤖👥 BOTH | 1 h after | owner | decision |
 | **Owner** | P2 | #133 | Retire `bot_coolbet_ou_model_v1` (zero candidates since its source retired) or re-source it from `bot_v10_ou_comb_v1` | 🤖 OWN | 10 min | owner | decision |
 | **Owner** | P2 | #170 | Abandoned match with a partial score: void everything, or follow the book (void unless decided) | 🤖👥 BOTH — settlement correctness | 2 h after | owner | decision |
-| ✅ | P2 | #179 | Shadow picks made before 2026-09-25 15:16 carry a later, higher price (writers rewrote it); re-price from pick-time snapshots or flag | 🤖👥 BOTH — every shadow-bot record is an upper bound until then | ~½ d | — | open (filed 09-26) |
+| ✅ | P2 | #179 | Shadow picks made before 2026-09-25 15:16 carry a later, higher price (writers rewrote it); re-price from pick-time snapshots or flag | 🤖👥 BOTH — every shadow-bot record is an upper bound until then | ~½ d | — | ✅ 09-26 (own basis re-priced; public basis was never affected) |
 | 1b | P1 | #172 | Re-price every bot at the Estonian books we can bet → no bot survives Holm; OWN needs per-book sharp-lag bots; per-bot calls in #171 | 🤖 OWN — gates any real money | done | — | ✅ 09-26 (research) |
 | 2 | P2 | #142 | Coolbet sits at 500/500 every hour; closing-price capture + health ping refused. Attribution + listing reuse shipped; next: per-pass pacing (or owner raises the budget) | 🤖👥 BOTH — closing prices for CLV and placement | ~1–2 h | 3 metered hours after 10:00 | reopened (09-26) |
 | 3 | P1 | #154 | Model inputs round 2: forward check ~09-27; power de-vig round R2-A pre-registered, runs at n ≥ 4,000 (~10-14) | 🤖👥 BOTH — both VIP bots' fair price | 1–1.5 d | forward data | prep done 09-26 |
@@ -265,6 +265,7 @@
 | 15 | P1 | #109 / #148 | Paid VIP tier: proof bar, payment route (Stripe works since May), checkout + channel access | 👥 PICKS — first paid product | ½ d + owner | #173 | open / in progress |
 | — | P2 | #114 | Separate edge floors for Pinnacle vs consensus | 🤖 OWN | 1–2 d | data ~10-21 | blocked |
 | — | P2 | #096 | Grade the sharp picks A/B/C | 👥 PICKS | ½ d | external price check | blocked |
+| — | P3 | #180 | Drop API-Football as the Tier C 1X2 fallback (worse than guessing; exposure 0 since 09-14) — needs a replacement choice | 🤖👥 BOTH | ~1 h + measure | — | open (filed 09-26) |
 | — | P3 | #090 | Market-decorrelated O/U model | 🤖 OWN | ~3 d | #124 | blocked |
 | — | P3 | #019 | Remove leftover paid-tier / Stripe code | 👥 PICKS / infra | 3 h | #109's route | blocked |
 | — | P3 | #134 / #135 / #178 | Triggers: forward-test checkpoints (~10-07), real-money re-arm preconditions, in-play confirmatory test (~10-08) | 👥 / 🤖 | 1–2 h each | date / owner | trigger |
