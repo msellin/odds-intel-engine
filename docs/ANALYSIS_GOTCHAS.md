@@ -3251,6 +3251,8 @@ month (post mid-July only — #83) and put it beside the backtest; if they disag
 `rule_version`* (`workers/registry/bot_registry.py` BotSpec; migration 453 stamps it on every new pick). The before/after
 comparison is the SAME bot's ledger split by `rule_version` — `WHERE rule_version = 'r2'` vs `'r1'` (NULL = before tagging) —
 not a second bot whose record starts at zero.
+**Since migration 461 (2026-09-26)** that split is a view: `SELECT * FROM bot_performance_by_rule WHERE bot_name = …`
+(`r0` = before tagging) — same metric definitions as `bot_performance` (§86). Do not hand-roll it from the base tables.
 
 ## 85. Own-book close CLV is negative BY CONSTRUCTION for an outlier-picking strategy — judge it on the sharp anchor (#156, 2026-09-25)
 A rule that picks a leg BECAUSE one soft book's price is off the sharp line (the sharp-edge forward test, the consensus
@@ -3288,3 +3290,8 @@ computed its own: stake-weighted `execPnl`, `dashboard_cache.bot_breakdown`, fla
 * **Retention caveat:** `odds_snapshots` keeps only the latest pre-kickoff row per series after ~7 days (§59), so an
   `odds_at_pick_available` backfilled today for an old leg can find fewer quotes than existed at pick time; it is
   floored at `odds_at_pick_live` (a real pick-time quote from a subset of the same books) for that reason.
+* **Rule versions are POOLED** in `bot_performance` (one row per bot, every `rule_version`). For the record of the
+  CURRENT rule, or before/after a rule change, read `bot_performance_by_rule` (migration 461, private) — the same
+  expressions over GROUPING SETS, so its per-version rows sum exactly to the pooled row. `r0` = picked before
+  tagging began (2026-09-25 ~22:20 UTC). `scored_rule_version` is set only for forward-test bots; NULL does not mean
+  "one rule".

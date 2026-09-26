@@ -589,7 +589,7 @@ def build_rows(db_bots: list[dict] | None = None) -> list[dict]:
     rows = []
     # + registry bots whose `bots` row is still in a pending migration (the smoke/migrate
     # race SYSTEM-MAP-REGISTRY-NOT-DRIFTED also forgives) — a new bot is exported from day 0.
-    from workers.registry.bot_registry import active_names as _registry_active
+    from workers.registry.bot_registry import active_names as _registry_active, by_name as _registry_by_name
     names = sorted(set(db) | {CONTROL_NAME} | _registry_active())
     for name in names:
         b = db.get(name) or {}
@@ -605,6 +605,14 @@ def build_rows(db_bots: list[dict] | None = None) -> list[dict]:
                      description="No resolvable config in running code (retired and deleted, or never code-defined). "
                                  + (f"DB description: {b.get('description')}" if b.get("description") else ""))
         r = dict(r)
+        # [[#162]] decision (b): the rule_version the DB trigger stamps on this bot's NEW picks
+        # (BotSpec.rule_version -> bots.rule_version, migration 453). Named pick_rule_version, not
+        # rule_version, because paper modules / the forward test already carry a `rule_version`
+        # gate for their own module constant. The per-version record is bot_performance_by_rule.
+        _spec = _registry_by_name(name)
+        if _spec is not None:
+            r["gates"] = list(r["gates"]) + [gate("pick_rule_version", _spec.rule_version,
+                                                  src(F_REG, rf'BotSpec\("{name}"'))]
         # #139 (owner decision 4, 2026-09-24): `placeable` = the bot HAS a placement path,
         # by the code rule placement_gate.placement_path_reason (shadow_bets, pre-match,
         # priced at a placer book, not a publish-only test) — no longer membership of a

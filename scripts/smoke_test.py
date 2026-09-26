@@ -17362,6 +17362,57 @@ def _():
     assert params["keep"] == st.DASHBOARD_CACHE_KEEP_DAYS
 
 
+@test("RULE-VERSION-SCORED — per-bot record split by rule_version: private view, sums to the pooled row, read by the bot sheet (#162)")
+def test_rule_version_scored():
+    """[[#162]] owner decision (b): a live bot's rule changes in place and each pick carries
+    rule_version (migration 453), but bot_ledger emitted NULL for it on the simulated / shadow
+    branches and bot_performance pools every version — so a rule change was unmeasurable.
+    Migration 461: bot_ledger carries the tag; bot_performance_sets computes the metrics ONCE over
+    GROUPING SETS ((bot_name), (bot_name, rule_version)); bot_performance = the pooled rows
+    (output unchanged), bot_performance_by_rule = the per-rule rows (NULL -> 'r0'). Private."""
+    mig = _engine_path("supabase/migrations/461_bot_performance_by_rule.sql").read_text()
+    led = mig[mig.index("CREATE OR REPLACE VIEW public.bot_ledger AS"):mig.index("CREATE VIEW public.bot_performance_sets")]
+    assert "NULL::text AS rule_version" not in led, "bot_ledger must carry the pick's rule_version"
+    assert "s.rule_version," in led and "sh.rule_version," in led and "x_1.rule_version" in led
+    sets = mig[mig.index("CREATE VIEW public.bot_performance_sets"):mig.index("CREATE OR REPLACE VIEW public.bot_performance AS")]
+    assert "GROUP BY GROUPING SETS ((bot_name), (bot_name, rule_key))" in sets, "ONE aggregate, two groupings"
+    assert "COALESCE(bot_ledger.rule_version, 'r0'::text) AS rule_key" in sets
+    perf = mig[mig.index("CREATE OR REPLACE VIEW public.bot_performance AS"):mig.index("CREATE VIEW public.bot_performance_by_rule")]
+    assert "FROM public.bot_performance_sets" in perf and "WHERE is_pooled" in perf
+    assert "count(" not in perf and "avg(" not in perf, "bot_performance must not re-derive a metric (drift)"
+    byr = mig[mig.index("CREATE VIEW public.bot_performance_by_rule"):mig.index("REVOKE ALL")]
+    assert "WHERE NOT is_pooled" in byr and "count(" not in byr
+    assert "TO anon" not in mig, "private views: no anon grant"
+    assert "FROM anon, authenticated" in mig
+    # the export carries the tag the DB trigger stamps on new picks
+    import scripts.export_bot_config as _ebc
+    rows = {r["bot_name"]: r for r in _ebc.build_rows(None)}
+    from workers.registry.bot_registry import by_name
+    g = [x for x in rows["bot_combined_1x2_ev5_v1"]["gates"] if x["name"] == "pick_rule_version"]
+    assert g and g[0]["value"] == by_name("bot_combined_1x2_ev5_v1").rule_version, g
+    # DB (after 461 applies): private, and the per-rule rows sum to the pooled row
+    from workers.api_clients.db import execute_query
+    have = execute_query("SELECT to_regclass('public.bot_performance_by_rule') AS r", [])[0]["r"]
+    msg = "461 not applied yet — source pins only"
+    if have:
+        priv = execute_query("SELECT has_table_privilege('anon', 'bot_performance_by_rule', 'SELECT') a, "
+                             "has_table_privilege('anon', 'bot_performance_sets', 'SELECT') b", [])[0]
+        assert not priv["a"] and not priv["b"], "bot_performance_by_rule / _sets must stay private"
+        bad = execute_query("""
+            SELECT p.bot_name FROM bot_performance p
+              JOIN (SELECT bot_name, sum(picks_total) n, sum(settled) s, sum(pnl_units_public) pnl
+                      FROM bot_performance_by_rule GROUP BY 1) r USING (bot_name)
+             WHERE p.picks_total <> r.n OR p.settled <> r.s OR p.pnl_units_public <> r.pnl""", [])
+        assert not bad, f"per-rule rows do not sum to bot_performance: {bad}"
+        msg = "private; per-rule n / settled / pnl == pooled on every bot"
+    # web: the bot sheet reads the view server-side (service client, with the board reads)
+    board = _web_path("src/lib/bot-board.ts").read_text(encoding="utf-8")
+    assert 'readAll<BotRuleRow>("bot_performance_by_rule", BOT_RULE_COLS)' in board
+    sheet = _web_path("src/app/(app)/admin/bots/bot-sheet.tsx").read_text(encoding="utf-8")
+    assert "byRule && byRule.length > 1 && <ByRuleTable" in sheet and "By rule version" in sheet
+    return msg
+
+
 @test("PIN-CROSS-DRIFT-PIPELINE — daily_pipeline_v2 calls helper + writes shadow flag + gates on env")
 def _():
     """The veto helper must be wired into daily_pipeline_v2 so it actually

@@ -701,6 +701,15 @@ BEFORE INSERT trigger stamps it on every new `simulated_bets` / `shadow_bets` ro
 writer is covered without being edited. Before/after = the same bot's ledger split by `rule_version`;
 NULL = made before tagging began (2026-09-25). Smoke `RULE-VERSION-TAGGED`.
 
+**Where the split is read (migration 461, smoke `RULE-VERSION-SCORED`).** `bot_ledger.rule_version` carries the
+tag on every branch (it was NULL on the simulated / shadow branches before 461). The per-version record is the
+private view **`bot_performance_by_rule`** (bot_name, rule_version, then bot_performance's columns; NULL shown as
+`r0` = before tagging) — the /admin/bots bot sheet shows it as **"By rule version"** (Performance tab) when a bot
+has more than one version. `bot_performance` and it are the two groupings of ONE aggregate
+(`bot_performance_sets`, GROUPING SETS), so the per-version n / pnl always sum to the pooled row.
+**`bot_performance` — and so every public headline — still POOLS all versions**; showing only the current rule
+publicly is an owner decision, not done. `bot_config.gates` carries `pick_rule_version` (the tag new picks get).
+
 ## Lifecycle — ONE STATUS DECIDES DISTRIBUTION ([[#155]], owner 2026-09-25)
 
 A bot's **status** (`bots.maturity_label`; `retired_at` = retired) is the ONLY per-bot input that
