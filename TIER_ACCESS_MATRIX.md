@@ -315,8 +315,8 @@ Pending picks of an EXPERIMENTAL bot are no longer anon-readable (`simulated_bet
 label (MODEL / SHARP / CONSENSUS).
 
 **Every public Telegram pick states its status ([[#183]], 2026-09-26):** the first line is
-`🟢 ACTIVE · <strategy>` or `⚠️ TESTING · <strategy> · on trial` (the /performance row name), stamped by
-`pick_sender.send_pick`, so a reader can tell proven picks from trials; the channel description explains the
+`🟢 ACTIVE · Sharp|Consensus|Model` or `⚠️ TESTING · …` (status + method tag from `bot_config.anchor`), stamped by
+`pick_sender.send_pick` (`bot_status.style_public_pick`; TESTING picks also lose the green ✅ on the pick row), so a reader can tell proven picks from trials; the channel description explains the
 two words. ACTIVE forward-test bots (`bot_sharp_1x2_v1` since 2026-09-26) count in the headline like any ACTIVE bot.
 
 ## VIP picks (#148, 2026-09-24)

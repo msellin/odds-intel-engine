@@ -38,9 +38,10 @@ from workers.api_clients.db import execute_query  # noqa: E402
 from workers.utils.bot_status import style_public_pick  # noqa: E402
 
 _SENT = """SELECT ps.pick_table, ps.pick_id, ps.bot_name, ps.message_id, ps.sent_at,
-                  bd.status, bd.display_name
+                  bd.status, bc.anchor AS method
              FROM pick_sends ps
              LEFT JOIN bot_distribution bd ON bd.bot_name = ps.bot_name
+             LEFT JOIN bot_config bc ON bc.bot_name = ps.bot_name
             WHERE ps.channel = 'public' AND ps.status = 'sent' AND ps.message_id IS NOT NULL
               AND ps.sent_at >= %s::date
             ORDER BY ps.sent_at"""
@@ -78,7 +79,7 @@ def rebuild(s: dict) -> str | None:
         body = _format_public_signal(rows[0]) if rows else None
     if body is None:
         return None
-    return style_public_pick(s.get("status"), s.get("display_name"), body)
+    return style_public_pick(s.get("status"), s.get("method"), body)
 
 
 def main() -> int:

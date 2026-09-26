@@ -101,29 +101,34 @@ PUBLIC_PICK_MARKER = {
 }
 
 
-def public_status_line(status: str | None, display_name: str | None) -> str:
-    """First line of a public Telegram pick, e.g. '🟢 <b>ACTIVE</b> · <b>Sharp-line picks — 1x2</b>' or
-    '⚠️ <b>TESTING</b> · <i>Goals over/under — new model</i> · <i>on trial</i>'.
-    An unknown/unreadable status prints the name only (never a guessed status word)."""
-    import html
+# The short METHOD tag (owner 2026-09-26: the long bot names on every pick were noise and did not line
+# up — one read like a market, the other did not). From bot_config.anchor; the channel description
+# explains the three words. The market is already on the pick row, so it is not repeated here.
+PUBLIC_METHOD_TAG = {"sharp": "Sharp", "consensus": "Consensus", "model": "Model"}
+
+
+def public_status_line(status: str | None, method: str | None) -> str:
+    """First line of a public Telegram pick: '🟢 <b>ACTIVE</b> · <b>Sharp</b>' or
+    '⚠️ <b>TESTING</b> · <i>Model</i>'. `method` is bot_config.anchor (sharp / consensus / model).
+    Unknown status → the method alone (never a guessed status word); unknown method → the status alone."""
     st = (status or "").lower()
     badge = PUBLIC_STATUS_BADGE.get(st)
-    name = html.escape(display_name) if display_name else None
-    if name and st == "active":
-        name = f"<b>{name}</b>"
-    elif name and st == "testing":
-        name = f"<i>{name}</i> · <i>on trial</i>"
-    parts = [x for x in (badge, name) if x]
+    tag = PUBLIC_METHOD_TAG.get((method or "").lower())
+    if tag and st == "active":
+        tag = f"<b>{tag}</b>"
+    elif tag and st == "testing":
+        tag = f"<i>{tag}</i>"
+    parts = [x for x in (badge, tag) if x]
     return (" · ".join(parts) + "\n") if parts else ""
 
 
-def style_public_pick(status: str | None, display_name: str | None, text: str) -> str:
+def style_public_pick(status: str | None, method: str | None, text: str) -> str:
     """The whole public-pick restyle ([[#183]]): the status line on top + the pick-row marker for the
     status. Unknown status → status line with the name only, pick marker left as written."""
     marker = PUBLIC_PICK_MARKER.get((status or "").lower())
     if marker:
         text = text.replace(PICK_TOKEN, marker, 1)
-    return public_status_line(status, display_name) + text
+    return public_status_line(status, method) + text
 
 
 # ── THE PUBLIC TELEGRAM CHANNEL RULE ([[#174]], owner decision 2026-09-26) ─────────────────────

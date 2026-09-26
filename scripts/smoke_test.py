@@ -56698,11 +56698,11 @@ def test_telegram_status_line():
     from workers.notify import pick_sender as ps
     import pathlib as _pl
     from workers.utils.bot_status import public_status_line, style_public_pick, PICK_TOKEN
-    assert public_status_line("active", "Sharp-line picks — 1x2") == "🟢 <b>ACTIVE</b> · <b>Sharp-line picks — 1x2</b>\n"
-    t = public_status_line("testing", "Goals over/under — new model")
-    assert t.startswith("⚠️ <b>TESTING</b> · <i>") and "on trial" in t and "🟢" not in t
-    assert public_status_line(None, "X") == "X\n", "unknown status → name only, never a guessed word"
-    assert "a&lt;b" in public_status_line("active", "a<b"), "names are HTML-escaped"
+    assert public_status_line("active", "sharp") == "🟢 <b>ACTIVE</b> · <b>Sharp</b>\n"
+    assert public_status_line("testing", "model") == "⚠️ <b>TESTING</b> · <i>Model</i>\n"
+    assert public_status_line("testing", "consensus") == "⚠️ <b>TESTING</b> · <i>Consensus</i>\n"
+    assert public_status_line(None, "sharp") == "Sharp\n", "unknown status → method only, never a guessed word"
+    assert public_status_line("active", None) == "🟢 <b>ACTIVE</b>\n"
     assert public_status_line(None, None) == ""
     # owner 2026-09-26: only ACTIVE may carry green — a TESTING pick row has no green check
     body = f"⚽ H vs A\n{PICK_TOKEN} <b>Over</b> @ <b>2.00</b>\n"
@@ -56715,7 +56715,7 @@ def test_telegram_status_line():
     src = inspect.getsource(ps.send_pick)
     assert "style_public_pick(" in src and "CHANNEL_PUBLIC" in src, "send_pick must stamp the status line"
     assert src.index("style_public_pick(") < src.index("_deliver("), "stamped BEFORE delivery"
-    assert "display_name" in inspect.getsource(ps._status_row)
+    assert "bc.anchor" in inspect.getsource(ps._status_row), "the method tag comes from bot_config.anchor"
 
 
 @test("HEADLINE-INCLUDES-FORWARD-TEST — an ACTIVE forward-test bot counts in the totals (#183)")

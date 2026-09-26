@@ -108,13 +108,14 @@ def _distribution_block(channel: str, bot: str, ev=None) -> Optional[str]:
 
 
 def _status_row(bot: str) -> dict:
-    """[[#183]] The bot's status + public name for the status line. {} when unreadable — the pick
+    """[[#183]] The bot's status + method (bot_config.anchor: sharp / consensus / model) for the status line. {} when unreadable — the pick
     then goes out with a neutral line (the send itself was already allowed by the checks above;
     losing a LABEL must not mute customers)."""
     try:
         from workers.api_clients.db import execute_query
         rows = execute_query(
-            "SELECT status, display_name FROM bot_distribution WHERE bot_name = %s", (bot,))
+            "SELECT bd.status, bc.anchor AS method FROM bot_distribution bd "
+            "LEFT JOIN bot_config bc ON bc.bot_name = bd.bot_name WHERE bd.bot_name = %s", (bot,))
         return rows[0] if rows else {}
     except Exception as e:  # noqa: BLE001
         log.warning("send_pick: status line unreadable for %s: %s", bot, e)
@@ -238,7 +239,7 @@ def send_pick(channel: str, bot: str, pick_table: str, pick_id, text: str, *,
         # trials; the channel description explains the two words).
         from workers.utils.bot_status import style_public_pick
         row = _status_row(bot)
-        text = style_public_pick(row.get("status"), row.get("display_name"), text)
+        text = style_public_pick(row.get("status"), row.get("method"), text)
     message_id, recipients = _deliver(channel, text, silent, reply_markup)
     ok = (message_id is not None) if channel != CHANNEL_VIP_DM else bool(recipients)
     status = "sent" if ok else "failed"
