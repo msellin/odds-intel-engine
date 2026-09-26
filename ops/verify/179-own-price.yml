@@ -1,0 +1,15 @@
+# [[#179]] pre-W2.1 shadow legs re-priced at pick time (migration 467 + scripts/backfill_own_pick_time_price.py)
+task: "#179"
+checks:
+  - name: backfill_done
+    mode: eventually
+    sql: |
+      SELECT count(*) FROM shadow_bets
+       WHERE pick_time < '2026-09-25 15:22:24+00' AND inplay_minute IS NULL AND own_price_checked_at IS NULL
+    expect: "== 0"
+    expires: "2026-09-28T00:00:00Z"
+  - name: ledger_uses_pick_time_own_price
+    mode: eventually
+    sql: "SELECT count(*) FROM bot_ledger WHERE own_basis = 'pick_time_snapshot'"
+    expect: ">= 1000"
+    expires: "2026-09-28T00:00:00Z"

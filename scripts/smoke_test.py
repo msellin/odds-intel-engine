@@ -57295,5 +57295,26 @@ def test_coolbet_listing_reuse():
     return "reuse only for far-only listings < 55 min old"
 
 
+@test("SHADOW-OWN-PRICE-PICK-TIME — pre-W2.1 shadow picks' OWN price is re-priced at pick time, never overwritten (#179)")
+def test_shadow_own_price_pick_time():
+    """[[#179]]: before #162 W2.1 (deployed 2026-09-25 15:22:24 UTC) re-sweeps rewrote shadow_bets.odds_at_pick
+    and odds_at_pick_live. Migration 467 adds odds_own_pick_time (own book's quote at pick time, <= 180 min)
+    and bot_ledger's shadow branch prefers it for pre-cutoff picks; the stored value is kept and labelled."""
+    mig = _engine_path("supabase/migrations/467_shadow_own_price_pick_time.sql").read_text()
+    led = mig[mig.index("CREATE OR REPLACE VIEW public.bot_ledger AS"):]
+    cut = "'2026-09-25 15:22:24+00'::timestamp with time zone"
+    assert led.count(cut) == 3 and "'pick_time_snapshot'::text" in led and "'our_books_unverified'::text" in led
+    assert "x_1.odds_own_pick_time" in led, "the shadow DISTINCT ON sub-select must carry the new column"
+    import re as _re179
+    assert not _re179.search(r"^\s*UPDATE\s+(public\.)?shadow_bets", mig, _re179.M | _re179.I), \
+        "the migration must not rewrite stored prices"
+    bf = _engine_path("scripts/backfill_own_pick_time_price.py").read_text()
+    for pin in ('CUTOFF = "2026-09-25 15:22:24+00"', "FRESH_MIN = 180", "own_price_checked_at IS NULL",
+                'o."timestamp" <= x.pick_time', "o.bookmaker = x.recommended_bookmaker", "o.is_live IS NOT TRUE"):
+        assert pin in bf, pin
+    assert "odds_at_pick_live =" not in bf and "odds_at_pick =" not in bf, "never overwrite the stored odds"
+    return "own basis re-priced at pick time for pre-W2.1 picks; stored odds untouched"
+
+
 if __name__ == "__main__":
     main()
