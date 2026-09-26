@@ -120,3 +120,20 @@ n = 100 — the base bot is not changed (ANALYSIS_GOTCHAS §84).
 **Expected.** More early picks (fitted rungs are mostly early); fitted-rung CLV positive but smaller than the
 base rule's (a fitted fair price is noisier than a quoted one). Most likely failure: the fit's error on
 quarter / far rungs is as large as the edge, so fitted-rung CLV ≈ 0.
+
+### TWIN — LADDER FIT: RESULT (2026-09-26) — NOT SUPPORTED, not shipped
+161,374 fitted rung-fetch prices on discovery produced **30 extra candidates and 1 extra pick** (one pick per
+match keeps the earlier quoted-rung pick); 09-01 → 09-25: **0** fitted-rung picks. Soft books agree with the
+fitted fair price on rungs Pinnacle does not quote; their errors sit on the rungs Pinnacle quotes, which the
+base rule already covers. The primary test cannot be run (n < 30) → not supported; `bot_ah_sharp_v1` unchanged.
+
+## PINNACLE-CONSISTENCY SPLIT (pre-registered 2026-09-26, before any number) — a candidate FILTER
+**Hypothesis.** When Pinnacle's own quoted rungs in the decision fetch do NOT fit one Skellam goal-difference
+distribution (`ah_ladder.fit_grid` rejects: some rung off by > 0.03, or < 2 rungs), the "fair price" may be
+Pinnacle's error rather than the soft book's, so those picks should have LOWER independent-close CLV.
+**Test.** Split the base rule's picks (the pooled rule, unchanged) by fit status at the decision fetch:
+`consistent` (fit accepted) vs `inconsistent` (rejected) vs `unfittable` (< 2 rungs). Primary: CLV(consistent)
+− CLV(inconsistent) > 0 at one-sided p < 0.05 (bootstrap on the difference) on discovery AND on 09-01 → 09-25.
+**Only if both pass** does the filter "require a consistent Pinnacle ladder" ship — as a twin bot, never by
+changing `bot_ah_sharp_v1`. Expected: most picks are `consistent`; a small `inconsistent` group with lower CLV,
+too few to pass (the likeliest outcome is n too small).
