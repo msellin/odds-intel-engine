@@ -113,11 +113,15 @@ def build(picks: list[dict], lines: dict, now_ts: float, books: tuple[str, ...],
         prices = {}
         best = None
         first_anchor = None
+        take_ats = []
         for bk in books:
             a = per_book.get(bk)
             p = a.prob(sel) if a is not None else None
             if p and first_anchor is None:
                 first_anchor = (a, p)
+            if p and a.source != "sharp_conflict":
+                # each book is judged against an anchor WITHOUT itself, so its bar differs slightly
+                take_ats.append((1 + EDGE_FLOOR) / p)
             q = (quotes.get(bk) or {}).get(sel)
             if not q:
                 continue
@@ -134,7 +138,8 @@ def build(picks: list[dict], lines: dict, now_ts: float, books: tuple[str, ...],
                 why = price_refusal(BOARD_RULE, p, odds, pin_q[0] if pin_q else None, (ko - now_ts) / 3600.0, None)
             prices[bk] = {"odds": odds, "age_min": age, "edge": round(edge, 4) if edge is not None else None,
                           "refusal": why, "anchor": a.source if a is not None else "none",
-                          "p_fair": round(p, 5) if p else None}
+                          "p_fair": round(p, 5) if p else None,
+                          "take_at": round((1 + EDGE_FLOOR) / p, 3) if p else None}
             if why is None and (best is None or odds > best[1]):
                 best = (bk, odds, edge, a, p)
         a_row, p_row = (best[3], best[4]) if best else (first_anchor or (None, None))
@@ -146,7 +151,8 @@ def build(picks: list[dict], lines: dict, now_ts: float, books: tuple[str, ...],
             "bots": sorted(g["bots"].values(), key=lambda b: (not b["vip"], b["bot"])),
             "n_bots": len(g["bots"]),
             "p_fair": p_row, "fair_odds": (1 / p_row) if p_row else None,
-            "take_at": ((1 + EDGE_FLOOR) / p_row) if p_row else None,
+            # the STRICTEST book's bar: a price at or above it clears the edge floor at every book
+            "take_at": max(take_ats) if take_ats else None,
             "pin_age_min": a_row.max_age_min if a_row is not None else None,
             "anchor_source": src, "anchor_books": a_row.n_books if a_row is not None else 0,
             "prices": prices,

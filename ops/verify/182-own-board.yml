@@ -1,0 +1,15 @@
+# [[#182]] the OWN board ("Where to bet", /admin/shadow-bots) is filled every 10 min by job own_bet_board.
+task: "#182"
+checks:
+  - name: own_board_fresh
+    mode: invariant
+    sql: "SELECT (SELECT count(*) FROM own_bet_board) > 0 AND (SELECT max(computed_at) FROM own_bet_board) > now() - interval '30 minutes'"
+    expect: "== true"
+    run_after:
+      time: 2026-09-26T16:30:00Z
+    expires: "2026-10-03T00:00:00Z"
+  - name: own_board_has_per_book_take_at
+    mode: eventually
+    sql: "SELECT count(*) FROM own_bet_board, jsonb_each(prices) p WHERE p.value ? 'take_at'"
+    expect: ">= 1"
+    expires: "2026-09-27T12:00:00Z"
