@@ -7,7 +7,8 @@ checks:
     sql: |
       SELECT count(*) FROM simulated_bets s JOIN bots b ON b.id = s.bot_id
        WHERE b.name = 'bot_v10_ou_comb_v1' AND s.model_version = 'ou_comb_v1'
-         AND s.edge_percent >= 0.03 AND s.odds_at_pick BETWEEN 1.30 AND 3.00
+         AND s.calibrated_prob * s.odds_at_pick - 1 >= 0.03 - 1e-9   -- EV, not the pp edge_percent
+         AND s.odds_at_pick BETWEEN 1.30 AND 3.00
     expect: ">= 1"
     run_after: {job: betting_refresh, since: "2026-09-25T15:30:00Z"}
     expires: "2026-09-26T16:00:00Z"

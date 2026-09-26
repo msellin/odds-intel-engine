@@ -1,0 +1,15 @@
+# REMINDER, not a health check (owner 2026-09-26): leave O/U TWO-ANCHOR (bot_ou_sharp_2anchor_v1,
+# EXPERIMENTAL) as it is, and compare it with VIP O/U EARLY (bot_ou_sharp_early_v1) once BOTH have
+# >= 50 settled picks. At 2026-09-26: TWO-ANCHOR 36 settled, sharp CLV +3.3%; EARLY 11 settled, -1.0%;
+# 13 of TWO-ANCHOR's 54 picks are also VIP picks. This check FAILS (→ operator Telegram) when both
+# reach 50 — that is the cue for the review (keep, promote TWO-ANCHOR to TESTING, or swap the VIP bot).
+task: "#149"
+checks:
+  - name: ou_vip_vs_two_anchor_review_due
+    mode: invariant
+    sql: |
+      SELECT least(
+        (SELECT count(*) FROM bot_ledger WHERE bot_name = 'bot_ou_sharp_2anchor_v1' AND result IN ('won','lost')),
+        (SELECT count(*) FROM bot_ledger WHERE bot_name = 'bot_ou_sharp_early_v1'   AND result IN ('won','lost')))
+    expect: "< 50"
+    expires: "2026-12-31T00:00:00Z"
