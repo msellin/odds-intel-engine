@@ -3261,13 +3261,17 @@ def main():
     # If a run fails, only ~25-30 API calls are lost. Progress tracked in DB.
     # AF budget: 75K/day. At 25min intervals: hist=30×57=1,710, coaches=10×57=570,
     # transfers=25×57=1,425 → ~3,705/day total, well within headroom.
+    # INTERVAL-JOBS-STARVED (2026-09-26): an IntervalTrigger's clock starts at scheduler START, and the
+    # scheduler restarts on every workers/** push — several an hour on a busy day — so any interval
+    # longer than the gap between restarts NEVER fires (own_bet_board ran 0 times in 2 h). Every job
+    # slower than ~2 min is on a CronTrigger (clock-anchored, survives restarts). Smoke INTERVAL-JOBS-STARVED.
     # 25min interval: worst case = 15s timeout × 3 retries × 30 requests = 22 min max,
     # giving 3 min buffer. At 25 transfers/run: 7,400 teams ÷ 57 runs/day ≈ 5 days to complete.
-    scheduler.add_job(job_backfill, IntervalTrigger(minutes=25),
+    scheduler.add_job(job_backfill, CronTrigger(minute="2,27,52"),  # ~25 min, clock-anchored (INTERVAL-JOBS-STARVED)
                       id="hist_backfill", name="Match Stats/Events Backfill")
-    scheduler.add_job(job_backfill_coaches, IntervalTrigger(minutes=25),
+    scheduler.add_job(job_backfill_coaches, CronTrigger(minute="12,37"),
                       id="backfill_coaches", name="Coaches Backfill")
-    scheduler.add_job(job_backfill_live_prices, IntervalTrigger(minutes=30),
+    scheduler.add_job(job_backfill_live_prices, CronTrigger(minute="17,47"),
                       id="backfill_live_prices", name="odds_at_pick_live producer")
     scheduler.add_job(job_backfill_half_scores, CronTrigger(hour=22, minute=30),
                       id="backfill_half_scores", name="1H/2H half-score sweep")
@@ -3592,10 +3596,10 @@ def main():
     scheduler.add_job(job_model_accuracy, CronTrigger(hour=2, minute=40),
                       id="model_accuracy", name="Model accuracy 02:40")
     # [[#182]] OWN board — every 10 min, 24/7 (Estonian sweeps are ~hourly, Pinnacle every 30 min)
-    scheduler.add_job(job_own_bet_board, IntervalTrigger(minutes=10),
+    scheduler.add_job(job_own_bet_board, CronTrigger(minute="*/10"),
                       id="own_bet_board", name="OWN board every 10 min")
     # [[#182]] OWN bot — every 10 min, 24/7 (its window is the last 3 h before kick-off)
-    scheduler.add_job(job_own_bots, IntervalTrigger(minutes=10),
+    scheduler.add_job(job_own_bots, CronTrigger(minute="3-59/10"),
                       id="own_bots", name="OWN bot every 10 min")
 
     # ML-PIPELINE-UNIFY Stage 5a — weekly retrain Sunday 03:00 UTC, runs train.py +
@@ -3720,7 +3724,7 @@ def main():
     # Stall watchdog: every 5 min, off-the-hour. Deliberately NOT wrapped in
     # _run_job — it must keep working when every other worker thread is wedged,
     # and it must not appear in its own _inflight registry. SCHEDULER-STALL-RCA.
-    scheduler.add_job(job_stall_watchdog, IntervalTrigger(minutes=5),
+    scheduler.add_job(job_stall_watchdog, CronTrigger(minute="*/5"),
                       id="job_stall_watchdog", name="Job Stall Watchdog [5min]")
 
     scheduler.add_job(job_pipeline_failure_alerter,

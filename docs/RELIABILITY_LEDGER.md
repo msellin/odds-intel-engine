@@ -1414,6 +1414,22 @@ embeds 200; every sensitive relation, both extension views and `rpc/get_latest_m
 mean to publish) + an explicit `GRANT SELECT … TO anon` in the same migration + the name added
 to the smoke test's list.
 
+## 27. An interval timer on a process that restarts faster than the interval never fires (2026-09-26)
+
+**What happened.** The new OWN board job (`IntervalTrigger(minutes=10)`) had run **0 times in 2 hours**
+while the scheduler showed it registered with a next-run time. The owner saw an empty "Where to bet" page.
+
+**Why.** APScheduler starts an interval's clock when the scheduler STARTS. The scheduler restarts on every
+`workers/**` push (deploy.yml), and with several sessions pushing, that was every 2–10 minutes — so each
+restart pushed the first run another 10 minutes out. The same trap silently held the 25/30-min history
+backfills and the 5-min stall watchdog.
+
+**Tell.** A job listed in the start-up banner ("15:22 UTC  OWN board every 10 min") with no `pipeline_runs`
+row at all — the next-run time keeps moving forward on each restart.
+
+**Guard.** Every job slower than 2 minutes is on a clock-anchored `CronTrigger` (survives restarts); smoke
+`INTERVAL-JOBS-STARVED` fails on any `IntervalTrigger` longer than 120 s.
+
 ## 26. A dependency that segfaults — and a scheduler that hosts every job in one process (2026-09-24)
 
 **What happened.** The first VPS run of the new `rating_1x2_shadow` job ([[#141]]) died with exit

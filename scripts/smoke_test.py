@@ -55291,7 +55291,7 @@ def test_pick_price_at_pick_time():
     assert bf.apply_backfill.__module__ and "price_legs(" in inspect.getsource(bf.apply_backfill)
     assert "recent_days=None if all_rows else 2" in inspect.getsource(bf.apply_backfill)
     sched = _engine_path("workers/scheduler.py").read_text()
-    assert "apply_backfill()" in sched and "job_backfill_live_prices, IntervalTrigger(minutes=30)" in sched
+    assert "apply_backfill()" in sched and "job_backfill_live_prices, CronTrigger(minute=\"17,47\")" in sched
     mig = _engine_path("supabase/migrations/433_one_bot_performance.sql").read_text()
     assert "ADD COLUMN IF NOT EXISTS odds_at_pick_available numeric" in mig
     # the pipeline writer itself stays latest-per-book (STALE-BEST-ODDS must not come back)
@@ -57377,7 +57377,7 @@ def test_own_bet_board():
         assert pin_ in src, pin_
     sched = _engine_path("workers/scheduler.py").read_text()
     assert '_run_job("own_bet_board", _job_own_bet_board_impl)' in sched
-    assert 'IntervalTrigger(minutes=10),\n                      id="own_bet_board"' in sched
+    assert 'CronTrigger(minute="*/10"),\n                      id="own_bet_board"' in sched
     mig = _engine_path("supabase/migrations/470_own_bet_board.sql").read_text()
     assert "REVOKE ALL ON public.own_bet_board FROM anon, authenticated" in mig and "TO anon" not in mig
     assert "anchor_source" in _engine_path("supabase/migrations/471_own_bet_board_anchor.sql").read_text()
@@ -57438,6 +57438,38 @@ def test_own_bots():
     sched = _engine_path("workers/scheduler.py").read_text()
     assert '_run_job("own_bots", _job_own_bots_impl)' in sched and 'id="own_bots"' in sched
     return "one bot, best clearing confirmed book, 3 h window, >= 3 confirmers, paper"
+
+
+@test("TONYBET-FAIR-HISTORY — first fair prob per checkpoint (open / 24h / 3h / 1h) kept beside the latest (#154)")
+def test_tonybet_fair_history():
+    """[[#154]] idea 3, owner 2026-09-26 "yes turn on tonybet fair history": book_fair_probs keeps only
+    the latest value (the close); book_fair_probs_history (migration 474) keeps the FIRST value in each
+    checkpoint bucket so Tonybet's fair price can be compared with Pinnacle at the same instant."""
+    from workers.automation import tonybet_feed as tf
+    assert tf.fair_checkpoints(None) == ["open"]
+    assert tf.fair_checkpoints(2000) == ["open"]
+    assert tf.fair_checkpoints(1000) == ["open", "t24h"]
+    assert tf.fair_checkpoints(150) == ["open", "t24h", "t3h"]
+    assert tf.fair_checkpoints(30) == ["open", "t24h", "t3h", "t1h"]
+    src = _engine_path("workers/automation/tonybet_feed.py").read_text()
+    assert "INSERT INTO book_fair_probs_history" in src and "checkpoint) DO NOTHING" in src
+    mig = _engine_path("supabase/migrations/474_book_fair_probs_history.sql").read_text()
+    assert "REVOKE ALL ON public.book_fair_probs_history FROM anon, authenticated" in mig
+    return "checkpoints pinned; first write per bucket wins"
+
+
+@test("INTERVAL-JOBS-STARVED — no scheduler job slower than 2 min uses IntervalTrigger (restarts reset it)")
+def test_interval_jobs_starved():
+    """2026-09-26: own_bet_board (IntervalTrigger 10 min) ran 0 times in 2 h — the scheduler restarts on
+    every workers/** push, several an hour, and an interval's clock starts at scheduler start. Clock-anchored
+    CronTriggers survive restarts. Only sub-2-minute pollers may use IntervalTrigger."""
+    import re as _re
+    sched = _engine_path("workers/scheduler.py").read_text()
+    for m in _re.finditer(r"IntervalTrigger\((minutes|seconds|hours)=(\d+)\)", sched):
+        unit, n = m.group(1), int(m.group(2))
+        secs = n * {"seconds": 1, "minutes": 60, "hours": 3600}[unit]
+        assert secs <= 120, f"IntervalTrigger({unit}={n}) is starved by restarts — use a CronTrigger"
+    return "every interval job <= 120 s"
 
 
 @test("MODEL-ACCURACY-JOB — every production probability source scored forward, vs base rate and Pinnacle on the same rows (#153)")

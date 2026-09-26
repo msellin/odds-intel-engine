@@ -367,8 +367,34 @@ def store_fair_probs(match_id: str, rows: list[tuple], minutes: int | None) -> i
                                  minutes_to_kickoff = EXCLUDED.minutes_to_kickoff,
                                  updated_at = now()""",
                 payload)
+            # [[#154]] idea 3 (owner 2026-09-26): the FIRST value in each checkpoint bucket is kept in
+            # book_fair_probs_history (migration 474) so an anchor test can align Tonybet with Pinnacle /
+            # the exchange before kick-off; the latest value above stays the close.
+            hist = [(m, b, mk, sel, line, cp, p, odds, mins)
+                    for (m, b, mk, sel, line, p, odds, mins) in payload for cp in fair_checkpoints(mins)]
+            if hist:
+                cur.executemany(
+                    """INSERT INTO book_fair_probs_history
+                         (match_id, bookmaker, market, selection, handicap_line, checkpoint, fair_prob,
+                          odds, minutes_to_kickoff)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT (match_id, bookmaker, market, selection,
+                                    COALESCE(handicap_line, -9999), checkpoint) DO NOTHING""",
+                    hist)
         conn.commit()
     return len(payload)
+
+
+FAIR_CHECKPOINTS = (("t24h", 24 * 60), ("t3h", 3 * 60), ("t1h", 60))
+
+
+def fair_checkpoints(minutes: int | None) -> list[str]:
+    """Pure: the history buckets a fair value taken `minutes` before kick-off belongs to. 'open' always
+    (the first write wins); each tN once inside it. None (unknown) -> 'open' only."""
+    out = ["open"]
+    if minutes is not None and minutes >= 0:
+        out += [name for name, lim in FAIR_CHECKPOINTS if minutes <= lim]
+    return out
 
 
 def store_event_rows(match_id: str, markets: list[dict], minutes: int | None) -> int:
