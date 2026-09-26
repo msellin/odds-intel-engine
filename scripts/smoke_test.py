@@ -957,6 +957,15 @@ def _():
 # single caller-controlled transaction and rolls back at the end. The function
 # under test runs completely unmodified against real schema and real
 # constraints, and nothing persists.
+_MODULE_PATCH_LOCKS: dict = {}
+_MODULE_PATCH_LOCKS_GUARD = _threading.Lock()
+
+
+def _module_patch_lock(module):
+    with _MODULE_PATCH_LOCKS_GUARD:
+        return _MODULE_PATCH_LOCKS.setdefault(id(module), _threading.Lock())
+
+
 @contextlib.contextmanager
 def module_db_txn(module, *, helpers=("execute_query", "execute_write")):
     """Run `module`'s DB calls inside one transaction, then roll it back.
@@ -980,18 +989,27 @@ def module_db_txn(module, *, helpers=("execute_query", "execute_write")):
         cur.execute(sql, params or [])
         return cur.rowcount
 
+    # MODULE-DB-TXN-THREAD-SAFE (2026-09-26): the patch used to be visible to EVERY thread, so a
+    # concurrent test calling the same module ran its SQL on THIS test's cursor ("no results to
+    # fetch", VIP-FIRST-HOLD-BACK) or wrote into the wrong transaction (DEAD-MATCH-VOID-EVERY-BET-
+    # TABLE / SETTLEMENT-POSTPONED-VOID: rows stayed 'pending'). Now: other threads keep the real
+    # function (_this_thread_only), and two patchers of one module take turns (per-module lock),
+    # so a restore can never undo another test's live patch.
+    lock = _module_patch_lock(module)
+    lock.acquire()
     saved = {}
     for name in helpers:
         if hasattr(module, name):
             saved[name] = getattr(module, name)
     for name in helpers:
         if name in saved:
-            setattr(module, name, _q if name == "execute_query" else _w)
+            setattr(module, name, _this_thread_only(_q if name == "execute_query" else _w, saved[name]))
     try:
         yield cur
     finally:
         for name, fn in saved.items():
             setattr(module, name, fn)
+        lock.release()
         try:
             conn.rollback()
         finally:
@@ -12271,7 +12289,10 @@ def _():
     # (`bm not in ACCESSIBLE_BOOKMAKERS`) were deleted — every bot they served was
     # retired. The live OWN application is pick_generator._own_outlier_ok.
     _pg_src = pathlib.Path("workers/automation/pick_generator.py").read_text()
-    assert "b in ACCESSIBLE_BOOKMAKERS" in _pg_src, (
+    # #160 (2026-09-26): the membership test lives in the pure _own_outlier_verdict, fed the set by the
+    # live path — pin both halves.
+    assert ("_own_outlier_verdict(quotes, mult, price, ACCESSIBLE_BOOKMAKERS)" in _pg_src
+            and "if b in accessible]" in _pg_src), (
         "no path applies the Estonian allow-list any more. OWN must keep it — "
         "without it the operator is shown, and could stake at, books that "
         "Estonia blocks")
@@ -57054,6 +57075,10 @@ def test_pre_commit_fast_checks():
 
 @test("SMOKE-PATCHERS-RUN-ALONE — tests that stub a shared DB function never run beside another test")
 def test_smoke_patchers_run_alone():
+    import inspect as _i
+    mdt = _i.getsource(module_db_txn)
+    assert "_this_thread_only(" in mdt and "_module_patch_lock(module)" in mdt, \
+        "module_db_txn must patch thread-locally and serialise patchers of one module"
     """2026-09-26: 18 tests replace execute_query / execute_write / get_conn in place; under the
     8-thread pool the stub leaked into the neighbouring test (SETTLEMENT-POSTPONED-VOID 'no results
     to fetch', VIP-FIRST-HOLD-BACK NoneType, PLACEMENT-GATE-DB-ELIGIBILITY, MONEY-GATE-READY-LOCK
