@@ -11852,6 +11852,10 @@ def main():
         "--baseline", default=None,
         help="A previous run's --failures-json. Failures are then split into NEW "
              "(caused by this push) and INHERITED (already red before it).")
+    parser.add_argument(
+        "--shard", default=None,
+        help="K/N — run only tests whose registry index %% N == K (CI-SMOKE-SHARDS: four CI jobs "
+             "in parallel; each writes its own --failures-json, the next run merges them).")
     args = parser.parse_args()
 
     if args.filter:
@@ -11863,6 +11867,11 @@ def main():
         print(f"Filter: {args.filter} → {len(registry)} test(s)")
     else:
         registry = _registry
+    if args.shard:
+        _k, _n = (int(x) for x in args.shard.split("/"))
+        assert 0 <= _k < _n, f"--shard {args.shard}: need 0 <= K < N"
+        registry = [t for i, t in enumerate(registry) if i % _n == _k]
+        print(f"Shard {_k}/{_n} → {len(registry)} test(s)")
 
     # SMOKE-SUITE-AUDIT 2026-09-01: warm the heavy scientific stack on ONE
     # thread before the pool starts.
@@ -57043,6 +57052,7 @@ def test_coolbet_model_price_guard():
 
 @test("CI-SMOKE-FAST-AND-MATCHING — CI tests on the VPS's Python; the long-pole tests stay single-query (#168 h)")
 def test_ci_smoke_fast_and_matching():
+    import inspect
     """[[#168]] (h), 2026-09-26: the gate ran 254 s with 32 of 40 runs cancelled by the next push
     before finishing. The critical path was three DB-chatty tests over the GitHub->VPS tunnel:
     MFV-LIVE-BUILD 239 s (every fixture today), AF-ISLIVE-CALLSITE-FIXES 109 s (count(*) of 2 days
@@ -57050,6 +57060,11 @@ def test_ci_smoke_fast_and_matching():
     the same check in one cheap round trip. And CI ran Python 3.12 against a 3.14 production."""
     wf = _engine_path(".github/workflows/smoke_tests.yml").read_text()
     assert "python-version: '3.14'" in wf, "CI must test on the Python the VPS runs"
+    # CI-SMOKE-SHARDS (2026-09-26): four jobs, each every 4th test; per-shard lists merged into one baseline
+    assert "shard: [0, 1, 2, 3]" in wf and "--shard ${{ matrix.shard }}/4" in wf and "fail-fast: false" in wf
+    assert "name: smoke-failures-${{ matrix.shard }}" in wf and "-p 'smoke-failures*'" in wf
+    assert 'json.dump({"failed": sorted(failed), "first_red": first}, open("_baseline/smoke_failures.json", "w"))' in wf
+    assert "registry = [t for i, t in enumerate(registry) if i % _n == _k]" in inspect.getsource(main)
     src = _engine_path("scripts/smoke_test.py").read_text()
     assert "sc._build_mfv_rows_for_matches(few, today_str)" in src and "ORDER BY date LIMIT 3" in src
     assert "count(*) n,\n                  sum(CASE WHEN o.timestamp > m.date" not in src
