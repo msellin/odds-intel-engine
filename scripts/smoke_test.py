@@ -57314,6 +57314,9 @@ def test_shadow_own_price_pick_time():
                 'o."timestamp" <= x.pick_time', "o.bookmaker = x.recommended_bookmaker", "o.is_live IS NOT TRUE"):
         assert pin in bf, pin
     assert "odds_at_pick_live =" not in bf and "odds_at_pick =" not in bf, "never overwrite the stored odds"
+    m468 = _engine_path("supabase/migrations/468_shadow_bets_unique_own_price.sql").read_text()
+    assert "sb.odds_own_pick_time" in m468 and "sb.own_price_checked_at" in m468, \
+        "shadow_bets_unique must expose the 467 columns (SHADOW-VIEW-COLUMN-DRIFT)"
     return "own basis re-priced at pick time for pre-W2.1 picks; stored odds untouched"
 
 
