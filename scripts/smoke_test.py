@@ -2827,8 +2827,8 @@ def _m454_applied():
         return None
 
 
-def _ft_arm_seed():
-    """The forward-test arm registry exactly as migration 454 seeds it:
+def _ft_arm_seed(with_464: bool = True):
+    """The forward-test arm registry exactly as migration 454 seeds it (+ 464's twin rows):
     ({arm: {role, published, in_bot_ledger, rule_version, parent}}, [(arm, grade, market, bot)])."""
     import re as _re
     sql = _engine_path(_M454).read_text(encoding="utf-8")
@@ -2842,6 +2842,18 @@ def _ft_arm_seed():
     bots = [(m[1], nul(m[2]), nul(m[3]), m[4]) for m in
             _re.finditer(r"\('(\w+)',\s*(NULL|'\w+'),\s*(NULL|'\w+'),\s*'(\w+)'\)", blk)]
     assert len(arms) == 5 and len(bots) == 7, (arms, bots)
+    # [[#163]] migration 464 puts the two #161 twins into bot_ledger: their arm -> bot rows and
+    # in_bot_ledger = true. Overlaid here so "the registry" means 454 + 464.
+    if not with_464:
+        return arms, bots
+    m464 = _engine_path("supabase/migrations/464_twin_arms_in_bot_ledger.sql").read_text(encoding="utf-8")
+    blk = m464.split("INSERT INTO public.forward_test_arm_bots", 1)[1].split("ON CONFLICT", 1)[0]
+    bots += [(m[1], nul(m[2]), nul(m[3]), m[4]) for m in
+             _re.finditer(r"\('(\w+)',\s*(NULL|'\w+'),\s*(NULL|'\w+'),\s*'(\w+)'\)", blk)]
+    upd = m464.split("UPDATE public.forward_test_arms SET in_bot_ledger = true", 1)[1].split(";", 1)[0]
+    for a in _re.findall(r"'(\w+)'", upd.split("IN (", 1)[1].split(")", 1)[0]):
+        arms[a]["in_bot_ledger"] = True
+    assert len(bots) == 9, bots
     return arms, bots
 
 
@@ -2910,7 +2922,7 @@ def test_forward_test_arm_registry():
     control = [a for a, r in arms.items() if r["role"] == "control"]
     twins = {a: r["parent"] for a, r in arms.items() if r["role"] == "twin"}
     assert published == {"live", "consensus_anchor"} and control == ["junk_anchor"]
-    assert {a for a, r in arms.items() if r["in_bot_ledger"]} == published | set(control)
+    assert {a for a, r in arms.items() if r["in_bot_ledger"]} == published | set(control) | set(twins)  # 464
 
     import scripts.publish_picks_forward_test as ft
     assert set(ft.PUBLISHED_ARMS) == published, "publisher PUBLISHED_ARMS != forward_test_arms.published"
@@ -2949,6 +2961,9 @@ def test_forward_test_arm_registry():
         db_arms = {r["arm"]: {"role": r["role"], "published": r["published"], "in_bot_ledger": r["in_bot_ledger"],
                               "rule_version": r["rule_version"], "parent": r["parent_arm"]}
                    for r in execute_query("SELECT * FROM forward_test_arms")}
+        applied_464 = bool(execute_query(
+            "SELECT 1 FROM _schema_migrations WHERE filename = '464_twin_arms_in_bot_ledger.sql'", []))
+        arms, bots = _ft_arm_seed(with_464=applied_464)   # CI can run before migrate.yml applies 464
         assert db_arms == arms, f"forward_test_arms drifted from the code pins: {db_arms}"
         # a set, not sorted(): grade / market are NULL on some rows, and None does not order against str
         db_bots = [(r["arm"], r["grade"], r["market"], r["bot_name"]) for r in
