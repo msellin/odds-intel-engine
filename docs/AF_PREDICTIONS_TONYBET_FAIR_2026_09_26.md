@@ -17,6 +17,11 @@ window's own outcome rates, Pinnacle = its de-vigged latest pre-kickoff price on
 | (reference) Pinnacle | 1X2 | 8,203 | 0.982 | 1.070 | — |
 | (reference) NEW+ `r1x2_comb_v1` | 1X2 | 267 | 0.945 | 1.045 | 0.955 / 0.953 (194) |
 
+⚠️ **The AF 1.527 includes 178 matches where AF gave 0% to the outcome that happened** (5% steps, "0%"
+allowed). Log-loss clips those at 1e-12 (≈ 27.6 each), adding ≈ 0.37. **Without them AF scores ≈ 1.16 — still
+worse than guessing (1.058)**, so every verdict below stands; quote "≈ 1.16 excluding its 0% calls" beside 1.527
+(independent re-check 2026-09-26). A 0% on something that happens is itself a defect of the source.
+
 ⚠️ `matches.af_prediction` has no fetch timestamp, so "written before kickoff" cannot be enforced for it (it is
 fetched in the pre-match enrichment; a late refetch cannot be ruled out). That can only flatter it — and it is
 still far worse than guessing. Tonybet rows are latest-only; `updated_at < kickoff` keeps them pre-match.

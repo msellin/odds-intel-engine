@@ -423,7 +423,7 @@ def _own_outlier_ok(match_id: str, market: str, selection: str, price: float) ->
         """SELECT DISTINCT ON (o.bookmaker) o.bookmaker, o.odds::float AS odds
              FROM odds_snapshots o
             WHERE o.match_id = %s AND o.market = %s AND o.selection = %s
-              AND o.bookmaker = ANY(%s)
+              AND o.bookmaker = ANY(%s) AND o.is_live IS NOT TRUE
             ORDER BY o.bookmaker, o.timestamp DESC""",
         (match_id, market, selection, sorted(ACCESSIBLE_BOOKMAKERS | {"Pinnacle"})),
     ) or []

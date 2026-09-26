@@ -3313,7 +3313,7 @@ computed its own: stake-weighted `execPnl`, `dashboard_cache.bot_breakdown`, fla
 
 ## 87. API-Football `/predictions` is worse than guessing; Tonybet's fair price is nearly Pinnacle ([[#144]], 2026-09-26)
 Forward, 30 days, same scorecard as /admin/models: AF 1X2 log-loss **1.527 vs 1.058** for the base rate
-(13,397 matches) — never use `matches.af_prediction` as a probability, a fallback or a public benchmark
+(13,397 matches; 178 of them AF called 0% for the actual outcome — excluding those it is ≈ 1.16, still worse) — never use `matches.af_prediction` as a probability, a fallback or a public benchmark
 ("we beat API-Football" proves nothing). Tonybet's Sportradar fair probabilities (`book_fair_probs`) score
 0.935 vs Pinnacle 0.922 on the same 252 matches — a candidate fair price where Pinnacle is missing, not yet
 pre-registered (#154 idea 3). Tonybet's own price is NEVER above its own fair (0 of ~14,000, margin 8–12%).
