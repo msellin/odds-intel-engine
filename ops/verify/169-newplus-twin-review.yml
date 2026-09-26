@@ -1,0 +1,10 @@
+# REMINDER, not a health check ([[#169]], owner 2026-09-26: keep the twin). FAILS (→ operator Telegram)
+# when bot_v10_1x2_newplus_v1 has 50 settled in-record picks: compare it with bot_v10_1x2 on the same
+# window (sharp-anchor CLV first, flat ROI second) and retire the loser.
+task: "#169"
+checks:
+  - name: newplus_twin_review_due
+    mode: invariant
+    sql: "SELECT coalesce((SELECT settled FROM bot_performance WHERE bot_name = 'bot_v10_1x2_newplus_v1'), 0)"
+    expect: "< 50"
+    expires: "2026-12-31T00:00:00Z"
