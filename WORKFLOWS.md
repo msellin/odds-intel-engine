@@ -138,7 +138,7 @@ Telegram public channel posting — ⚠️ **CHANGED 2026-09-25 ([[#155]] ONE ST
 | Switch | Column | Set by | Stops placement | Stops `@oddsintelpicks` |
 |---|---|---|---|---|
 | Placement pause | `placement_paused` | **pause:** /admin/bots, Telegram `/pause`, daemon self-pause, migration 343 (OWN-path verdict). **resume:** /admin/bots ONLY (typed `RESUME PLACEMENT`, or `RESUME STRATEGIC` when the reason is a strategic stop, + a reason) and the daemon's auto-clear of its own self-pause | ✅ | ❌ never |
-| Publishing pause | `publishing_paused` (mig 353) | `/pausepicks` / `/resumepicks`, and /admin/bots (pause = typed `PAUSE PICKS` + reason; resume = one click) | ❌ | ✅ (sends only; since #162 W5.3 also the VIP channel + Pro/Elite DMs, enforced in `send_pick`) |
+| Publishing pause | `publishing_paused` (mig 353) | `/pausepicks` / `/resumepicks` (audited, `source='telegram'`), and /admin/bots (pause = typed `PAUSE PICKS` + reason; resume = one click) | ❌ | ✅ (sends only; since #162 W5.3 also the VIP channel + Pro/Elite DMs, enforced in `send_pick`) |
 | Coolbet footprint pause | `daemons_paused` (mig 318) | **/admin/feeds** only (moved from /admin/bots, #139 IA move P2, 2026-09-24; the /admin/shadow-bots direct-UPDATE route was deleted). No Telegram command (owner) | ❌ never — stops Coolbet odds sweeping (explorer, in-play collector) and the feed watchdog only (owner decision 2026-09-24; `coolbet_control` readiness lists it as a warning, not a blocker) | ❌ |
 
 **Control panel + audit log (#139 phase A, migration 413, 2026-09-24).** `/admin/bots` is THE control
@@ -156,7 +156,10 @@ resume is the engine auto-clearing its OWN daemon self-pause (exact marker; `aut
 reason containing "daemon"); `coolbet_browser_sync --resume-placement` refuses operator and strategic pauses, and
 a DB trigger refuses every other start (arm, resume) that does not come through the audited functions.
 `set_real_money_armed(True)` is refused in code — real money is armed only on the page. `/pausepicks`
-and `/resumepicks` are unchanged. Every applied page change is also sent as one line to the operator chat
+and `/resumepicks` go through `admin_set_control` (`control='publishing_paused'`, `source='telegram'`,
+actor `telegram:<user id>`) since #162 W5.5 (2026-09-26) — they were bare UPDATEs with no audit row; from
+Telegram neither needs a typed confirm (only the page's pause does), the pause keeps a plain-update fallback
+(a stop), the resume never writes unaudited (smoke `TELEGRAM-CONTROLS-AUDITED`). Every applied page change is also sent as one line to the operator chat
 (a courtesy — a failed notice never undoes the change). When each switch takes effect is shown under it
 on the page (placement / disarm / eligibility: next gate check, at run start and before every pick;
 publishing: next :05/:35 send; footprint: next collector tick; /picks: next render).

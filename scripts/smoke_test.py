@@ -28577,6 +28577,40 @@ def _team_scoring_rates():
     return f"{checked} team-slots reproduced exactly from strictly-prior matches"
 
 
+@test("TELEGRAM-CONTROLS-AUDITED — every Telegram control write goes through admin_set_control(source='telegram')")
+def test_telegram_controls_audited():
+    """#162 W5.5 (B-R8, 2026-09-26). /pausepicks and /resumepicks used to be bare UPDATEs of
+    coolbet_session_state.publishing_paused — the one Telegram control write left outside the
+    append-only control_changes log that every page control and /pause already write. Both now
+    call admin_set_control (migration 413 already accepts control 'publishing_paused' with source
+    'telegram', unconfirmed from Telegram; only source 'web' needs PAUSE PICKS + reason).
+    Direct writes may remain ONLY as the STOP-direction fallback when the audited call errors
+    (a stop must never depend on the audit path): the resume never writes unaudited."""
+    src = _web_path("src/app/api/telegram/webhook/route.ts").read_text(encoding="utf-8")
+    helper = src.split("async function setPublishingPausedAudited(")[1].split("\nasync function ")[0]
+    assert '"admin_set_control"' in helper and 'p_control: "publishing_paused"' in helper \
+        and 'p_source: "telegram"' in helper and "p_value: paused" in helper and "p_actor: actor" in helper
+    # the resume direction returns on an RPC error before the fallback; the fallback only pauses
+    rpc_err = helper.split("if (!paused) return error.message;")
+    assert len(rpc_err) == 2 and "admin.rpc(" in rpc_err[0] and ".update(" not in rpc_err[0], \
+        "the resume must return before any direct write when admin_set_control fails"
+    assert "publishing_paused: true," in rpc_err[1] and "publishing_paused: false" not in src, \
+        "the only direct publishing write left is the STOP fallback"
+    for fn, val in (("handlePausePicksCommand", "true"), ("handleResumePicksCommand", "false")):
+        body = src.split(f"async function {fn}(")[1].split("\n}\n")[0]
+        assert f"setPublishingPausedAudited(admin, `telegram:${{chatId}}`, {val}," in body and ".update(" not in body, fn
+    # every direct coolbet_session_state UPDATE in the route is a STOP fallback inside an audited helper
+    updates = src.split('.from("coolbet_session_state")')[1:]
+    writes = [u for u in updates if u.lstrip().startswith(".update(")]
+    assert len(writes) == 2, f"expected exactly the two STOP fallbacks, found {len(writes)} direct writes"
+    assert all(("placement_paused: true" in w[:200]) or ("publishing_paused: true" in w[:200]) for w in writes)
+    assert "coolbet_placer_bots" not in src, "per-bot real-money eligibility is page-only"
+    # the DB side: the function takes this control from this source without a typed confirm
+    sql = _engine_path("supabase/migrations/413_bot_controls.sql").read_text(encoding="utf-8")
+    assert "(p_control = 'publishing_paused' AND v_on AND p_source = 'web')" in sql
+    assert "GRANT EXECUTE ON FUNCTION public.admin_set_control(text, text, jsonb, text, text, text, uuid, text, jsonb, uuid)\n    TO service_role;" in sql
+
+
 @test("ODDS-NO-MAX-AGE — a dead feed's last quote is not priced as a live offer")
 def _odds_no_max_age():
     """ODDS-NO-MAX-AGE-2026-09-03. STALE-BEST-ODDS fixed `MAX(odds)` over all
@@ -51364,7 +51398,7 @@ def test_control_no_single_click_money():
 def test_control_telegram_stop_only():
     """Owner decision 3 (2026-09-24): /admin/bots is THE control surface for real money;
     Telegram is notifications only, with /pause as a stop-only emergency command.
-    /pausepicks and /resumepicks are unchanged."""
+    /pausepicks and /resumepicks are audited too since #162 W5.5 (TELEGRAM-CONTROLS-AUDITED)."""
     src = _web_path("src/app/api/telegram/webhook/route.ts").read_text(encoding="utf-8")
     resume = src.split("async function handleResumeCommand(")[1].split("\n}\n")[0]
     assert "START_REFUSAL" in resume and "update(" not in resume
@@ -51374,8 +51408,9 @@ def test_control_telegram_stop_only():
     assert 'p_source: "telegram"' in src and 'p_control: "placement_paused"' in src
     cb = src.split('// coolbet-resume: REFUSED')[1][:600]
     assert "answerCallbackQuery(" in cb and "update(" not in cb
-    # /pausepicks unchanged: still a direct, unaudited publishing switch
-    assert "function handlePausePicksCommand(" in src and "publishing_paused: true" in src
+    # #162 W5.5 (2026-09-26): /pausepicks is no longer a direct, unaudited switch — it goes
+    # through admin_set_control too (pinned in detail by TELEGRAM-CONTROLS-AUDITED).
+    assert "function handlePausePicksCommand(" in src and 'p_control: "publishing_paused"' in src
 
 
 @test("CONTROL-PAGE-FAIL-SAFE — Unknown never reads Off; starts disabled; publish and placement in separate cards")

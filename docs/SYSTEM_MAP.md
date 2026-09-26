@@ -859,7 +859,8 @@ was the hardcoded `PLACEABLE_BOTS`) is what decides whether a euro moves. See th
   /admin/bots (was: because `PLACEABLE_BOTS` was hardcoded, until 2026-09-24).
 - ⚠️ **`placement_paused` does NOT gate the Telegram public channel** — not any more
   (PICKS-PUBLISH-DECOUPLED-FROM-OWN-PAUSE, 2026-09-15, migration 353). Publishing has
-  its own flag, `publishing_paused`, set only by `/pausepicks`. The two are separate
+  its own flag, `publishing_paused`, set by `/pausepicks` or the /admin/bots switch — both
+  through the audited `admin_set_control` (Telegram as `source='telegram'` since #162 W5.5). The two are separate
   because a 🤖 OWN decision to stop staking is not a 👥 PICKS decision to stop
   publishing: on 2026-09-14 the OWN-path verdict flipped `placement_paused` and armed
   a silent customer-feed outage nobody chose. Publishing makes no Coolbet call and
