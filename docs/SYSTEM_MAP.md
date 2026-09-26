@@ -752,9 +752,9 @@ NOT on this path (placement + operator prompt only). Smoke `PUBLIC-TELEGRAM-ONE-
 
 **Status line on every public pick ([[#183]], owner 2026-09-26):** the channel mixed ACTIVE and TESTING picks from
 five methods and readers could not tell them apart (model O/U picks carried no label at all). Every public pick
-now OPENS with `🟢 ACTIVE · <display name>` or `🧪 TESTING · <display name>` — the bot's status plus the same name
+now OPENS with `🟢 ACTIVE · <display name>` (name bold) or `⚠️ TESTING · <display name> · on trial` (italic), and the pick row's marker follows the status — `🎯 Pick:` for ACTIVE, a plain `▫️ Pick:` for TESTING (no green check), so the only green in the channel is ACTIVE (owner 2026-09-26: "it's all very green"; Telegram has no colour or font size, so the difference is emoji + bold/italic weight) — the bot's status plus the same name
 as its /performance row. Stamped in ONE place, `pick_sender.send_pick` (CHANNEL_PUBLIC), from
-`bot_distribution`, via `bot_status.public_status_line`, so no caller can post an unlabelled pick. The consensus
+`bot_distribution`, via `bot_status.style_public_pick`, so no caller can post an unlabelled pick. The consensus
 B/C grade stays as its own line (◆ B / ◇ C — it grades picks WITHIN one method; the status grades the METHOD'S
 evidence), and no longer repeats the status word. The channel description (set by the owner in Telegram) explains
 the two words. Smoke `TELEGRAM-STATUS-LINE`.

@@ -56696,15 +56696,25 @@ def test_telegram_status_line():
     — pick_sender.send_pick for CHANNEL_PUBLIC — from bot_distribution, so no caller can skip it."""
     import inspect
     from workers.notify import pick_sender as ps
-    from workers.utils.bot_status import public_status_line
-    assert public_status_line("active", "Sharp-line picks — 1x2") == "🟢 <b>ACTIVE</b> · Sharp-line picks — 1x2\n"
-    assert public_status_line("testing", "Goals over/under — new model").startswith("🧪 <b>TESTING</b> · ")
+    import pathlib as _pl
+    from workers.utils.bot_status import public_status_line, style_public_pick, PICK_TOKEN
+    assert public_status_line("active", "Sharp-line picks — 1x2") == "🟢 <b>ACTIVE</b> · <b>Sharp-line picks — 1x2</b>\n"
+    t = public_status_line("testing", "Goals over/under — new model")
+    assert t.startswith("⚠️ <b>TESTING</b> · <i>") and "on trial" in t and "🟢" not in t
     assert public_status_line(None, "X") == "X\n", "unknown status → name only, never a guessed word"
-    assert public_status_line("active", "a<b") .endswith("a&lt;b\n"), "names are HTML-escaped"
+    assert "a&lt;b" in public_status_line("active", "a<b"), "names are HTML-escaped"
     assert public_status_line(None, None) == ""
+    # owner 2026-09-26: only ACTIVE may carry green — a TESTING pick row has no green check
+    body = f"⚽ H vs A\n{PICK_TOKEN} <b>Over</b> @ <b>2.00</b>\n"
+    assert "🎯 Pick:" in style_public_pick("active", "N", body) and "✅" not in style_public_pick("active", "N", body)
+    tst = style_public_pick("testing", "N", body)
+    assert "▫️ Pick:" in tst and "✅" not in tst and "🟢" not in tst
+    root = _pl.Path(__file__).resolve().parent.parent
+    for f in ("scripts/publish_picks_forward_test.py", "workers/automation/coolbet_signaler.py"):
+        assert PICK_TOKEN in (root / f).read_text(), f"{f} must write the pick token style_public_pick swaps"
     src = inspect.getsource(ps.send_pick)
-    assert "public_status_line(" in src and "CHANNEL_PUBLIC" in src, "send_pick must stamp the status line"
-    assert src.index("public_status_line(") < src.index("_deliver("), "stamped BEFORE delivery"
+    assert "style_public_pick(" in src and "CHANNEL_PUBLIC" in src, "send_pick must stamp the status line"
+    assert src.index("style_public_pick(") < src.index("_deliver("), "stamped BEFORE delivery"
     assert "display_name" in inspect.getsource(ps._status_row)
 
 

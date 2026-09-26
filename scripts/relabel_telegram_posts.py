@@ -2,13 +2,13 @@
 """Add the status line to public Telegram posts that went out before it existed ([[#183]]).
 
 WHY. Since #183 every public pick opens with its bot's status and name
-("🟢 ACTIVE · Sharp-line picks — 1x2" / "🧪 TESTING · Goals over/under — new model"), stamped by
+("🟢 ACTIVE · Sharp-line picks — 1x2" / "⚠️ TESTING · Goals over/under — new model"), stamped by
 workers/notify/pick_sender.send_pick. Owner 2026-09-26: "can we also edit all the todays picks
 messages on telegram?" — so the day's earlier posts read the same way as the new ones.
 
 HOW. The Bot API cannot read a channel post back, so each post is RE-RENDERED from its ledger row
 with the sender's own formatter (the forward-test publisher's `render()`, the signaler's
-`_format_public_signal()`), prefixed with `public_status_line()` for the bot's CURRENT status, and
+`_format_public_signal()`), restyled with `style_public_pick()` for the bot's CURRENT status (status line + pick-row marker), and
 swapped in with editMessageText. Which posts: `pick_sends` rows (channel public, status sent, with a
 message id) — the audited send log, so only posts we actually made are touched.
 
@@ -35,7 +35,7 @@ from dotenv import load_dotenv  # noqa: E402
 load_dotenv()
 
 from workers.api_clients.db import execute_query  # noqa: E402
-from workers.utils.bot_status import public_status_line  # noqa: E402
+from workers.utils.bot_status import style_public_pick  # noqa: E402
 
 _SENT = """SELECT ps.pick_table, ps.pick_id, ps.bot_name, ps.message_id, ps.sent_at,
                   bd.status, bd.display_name
@@ -78,7 +78,7 @@ def rebuild(s: dict) -> str | None:
         body = _format_public_signal(rows[0]) if rows else None
     if body is None:
         return None
-    return public_status_line(s.get("status"), s.get("display_name")) + body
+    return style_public_pick(s.get("status"), s.get("display_name"), body)
 
 
 def main() -> int:

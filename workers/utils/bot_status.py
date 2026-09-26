@@ -85,20 +85,45 @@ def forward_test_bot(arm: str, market: str | None, grade: str | None) -> str:
 # row, so a reader can look up its record). Stamped inside pick_sender.send_pick — no caller can
 # skip it. The channel description explains the two words. The consensus B/C grade stays as a
 # second line: it grades picks WITHIN one method; the status grades the METHOD's evidence.
+# VISUAL WEIGHT, not colour (owner 2026-09-26: "it's all very green, difficult to see what's best").
+# Telegram offers no colour or font size — only emoji, bold and italic — so ACTIVE carries the only
+# green in the channel and bold, TESTING a warning sign, italics and "on trial", and the pick line's
+# marker follows the status (the formatters write "✅ Pick:"; style_public_pick swaps it), so a
+# TESTING pick no longer opens its pick row with a green check.
 PUBLIC_STATUS_BADGE = {
     "active": "🟢 <b>ACTIVE</b>",
-    "testing": "🧪 <b>TESTING</b>",
+    "testing": "⚠️ <b>TESTING</b>",
+}
+PICK_TOKEN = "✅ Pick:"           # what both public formatters write; smoke TELEGRAM-STATUS-LINE pins it
+PUBLIC_PICK_MARKER = {
+    "active": "🎯 Pick:",
+    "testing": "▫️ Pick:",
 }
 
 
 def public_status_line(status: str | None, display_name: str | None) -> str:
-    """First line of a public Telegram pick, e.g. '🟢 <b>ACTIVE</b> · Sharp-line picks — 1x2'.
+    """First line of a public Telegram pick, e.g. '🟢 <b>ACTIVE</b> · <b>Sharp-line picks — 1x2</b>' or
+    '⚠️ <b>TESTING</b> · <i>Goals over/under — new model</i> · <i>on trial</i>'.
     An unknown/unreadable status prints the name only (never a guessed status word)."""
     import html
-    badge = PUBLIC_STATUS_BADGE.get((status or "").lower())
+    st = (status or "").lower()
+    badge = PUBLIC_STATUS_BADGE.get(st)
     name = html.escape(display_name) if display_name else None
+    if name and st == "active":
+        name = f"<b>{name}</b>"
+    elif name and st == "testing":
+        name = f"<i>{name}</i> · <i>on trial</i>"
     parts = [x for x in (badge, name) if x]
     return (" · ".join(parts) + "\n") if parts else ""
+
+
+def style_public_pick(status: str | None, display_name: str | None, text: str) -> str:
+    """The whole public-pick restyle ([[#183]]): the status line on top + the pick-row marker for the
+    status. Unknown status → status line with the name only, pick marker left as written."""
+    marker = PUBLIC_PICK_MARKER.get((status or "").lower())
+    if marker:
+        text = text.replace(PICK_TOKEN, marker, 1)
+    return public_status_line(status, display_name) + text
 
 
 # ── THE PUBLIC TELEGRAM CHANNEL RULE ([[#174]], owner decision 2026-09-26) ─────────────────────

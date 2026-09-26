@@ -216,7 +216,7 @@ def _grade_line(c: dict, status: str | None = None) -> str:
         return ""
     if grade in ("B", "C"):
         # [[#183]] the status word moved to the status line pick_sender stamps on EVERY public
-        # pick ("🧪 TESTING · Consensus picks — grade C"), so it is no longer repeated here; the
+        # pick ("⚠️ TESTING · Consensus picks — grade C"), so it is no longer repeated here; the
         # grade's own emoji is ◆ so it cannot be read as the status line's 🟢 ACTIVE.
         # `status` is kept in the signature for callers/tests; it no longer changes the line.
         if grade == "B":
