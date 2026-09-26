@@ -57784,5 +57784,31 @@ def test_forward_test_breaker_per_arm():
     return "per-arm breaker in the scheduled job and the CLI"
 
 
+@test("MODEL-PREDICTION-HISTORY — #191 both model-prediction writers append, pre-kick-off only, on change")
+def test_model_prediction_history():
+    """#191: rating_1x2_predictions and ou_model_predictions keep only the latest value and are overwritten
+    every 30 min (sometimes after kick-off), so a MODEL-based OWN bot could not be backtested point-in-time.
+    Both writers now also append to model_prediction_history (migration 479) in the same transaction; the
+    INSERT … SELECT only admits future, scheduled matches and skips a value equal to the latest row."""
+    import inspect
+    from workers.jobs import rating_1x2_shadow as R
+    sql = " ".join(R.HISTORY_SQL.split())
+    assert "INSERT INTO model_prediction_history" in sql
+    assert "WHERE m.date > now() AND m.status = 'scheduled'" in sql, "history must stop at kick-off"
+    assert "ORDER BY h.written_at DESC LIMIT 1" in sql and "last.probs = v.probs::jsonb" in sql, \
+        "append only when the value changed"
+    for fn, table in ((R._write, "rating_1x2_predictions"), (R._write_ou, "ou_model_predictions")):
+        src = inspect.getsource(fn)
+        assert f"INSERT INTO {table}" in src and "_append_history(cur," in src, \
+            f"{fn.__name__} must append to the history in the same transaction"
+        assert src.index("_append_history(cur,") < src.index("conn.commit()")
+    mig = _engine_path("supabase/migrations/479_model_prediction_history.sql").read_text(encoding="utf-8")
+    assert "CREATE TABLE IF NOT EXISTS public.model_prediction_history" in mig
+    assert "REVOKE ALL ON public.model_prediction_history FROM anon, authenticated" in mig
+    assert "TO anon" not in mig, "the history is private (#072)"
+    assert "CHECK (minutes_to_kickoff > 0)" in mig, "the table itself refuses a post-kick-off row"
+    return "both writers append pre-KO on change; table private"
+
+
 if __name__ == "__main__":
     main()

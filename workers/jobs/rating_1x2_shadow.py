@@ -87,6 +87,45 @@ COMB_TRAIN_FROM_EPOCH = 1777593600.0     # 2026-05-01: multi-book history starts
 DRY_RUN = False     # --dry-run: compute everything, write nothing
 
 
+# ── #191 APPEND-ONLY HISTORY (migration 479) ─────────────────────────────────────────
+# The two prediction tables below keep only the LATEST value per key and are overwritten every
+# 30 min, so the value a bot saw at T-3h is gone by settlement. Every write therefore ALSO appends
+# to model_prediction_history, inside the same transaction, with two filters done in SQL (so the
+# DB clock and the matches row decide, not the caller):
+#   * PRE-KICK-OFF ONLY — m.date > now() AND m.status = 'scheduled'; a post-kick-off refresh
+#     never lands in the history, whatever the prediction table does;
+#   * ONLY ON CHANGE — skipped when `probs` equals the latest history row for the same
+#     (match, model_version, market), which keeps volume to real re-prices.
+HISTORY_SQL = """
+    INSERT INTO model_prediction_history
+        (match_id, model_version, market, probs, grp, minutes_to_kickoff)
+    SELECT m.id, v.model_version, v.market, v.probs::jsonb, v.grp,
+           round((extract(epoch FROM m.date - now()) / 60.0)::numeric, 1)
+      FROM (VALUES %s) AS v(match_id, model_version, market, probs, grp)
+      JOIN matches m ON m.id = v.match_id::uuid
+     WHERE m.date > now() AND m.status = 'scheduled'
+       AND NOT EXISTS (
+           SELECT 1 FROM (SELECT h.probs FROM model_prediction_history h
+                           WHERE h.match_id = m.id AND h.model_version = v.model_version
+                             AND h.market = v.market
+                           ORDER BY h.written_at DESC LIMIT 1) last
+            WHERE last.probs = v.probs::jsonb)"""
+
+
+def _append_history(cur, rows: list[tuple]) -> int:
+    """rows: (match_id, model_version, market, probs_dict, grp). Returns rows appended."""
+    if not rows:
+        return 0
+    import json
+    from psycopg2.extras import execute_values
+    vals = [(str(mid), ver, mk, json.dumps(pr, sort_keys=True), grp) for mid, ver, mk, pr, grp in rows]
+    n = 0
+    for i in range(0, len(vals), 1000):   # execute_values pages; count each page
+        execute_values(cur, HISTORY_SQL, vals[i:i + 1000], page_size=1000)
+        n += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+    return n
+
+
 # ── COMBINED O/U ([[#152]]) — rides on the same walk-forward rating pass ─────────────
 def _write_ou(d: pd.DataFrame, p_comb, grp) -> int:
     from workers.model.combined_ou import MODEL_VERSION as OU_VER, served_over
@@ -109,6 +148,8 @@ def _write_ou(d: pd.DataFrame, p_comb, grp) -> int:
                     p_over = EXCLUDED.p_over, p_comb = EXCLUDED.p_comb, p_pin = EXCLUDED.p_pin,
                     grp = EXCLUDED.grp, n_books = EXCLUDED.n_books, lam_total = EXCLUDED.lam_total,
                     updated_at = now()""", rows)
+            _append_history(cur, [(r[0], r[2], r[1], {"over": r[3], "comb": r[4], "pin": r[5]}, r[6])
+                                  for r in rows])
         conn.commit()
     return len(rows)
 
@@ -178,6 +219,8 @@ def _write(rows: list[tuple]) -> None:
                     p_home = EXCLUDED.p_home, p_draw = EXCLUDED.p_draw, p_away = EXCLUDED.p_away,
                     n_home = EXCLUDED.n_home, n_away = EXCLUDED.n_away, gated = EXCLUDED.gated,
                     sources = EXCLUDED.sources, updated_at = now()""", rows)
+            _append_history(cur, [(r[0], r[1], "1x2", {"home": r[2], "draw": r[3], "away": r[4]}, r[8])
+                                  for r in rows])
         conn.commit()
 
 

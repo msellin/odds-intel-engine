@@ -3330,3 +3330,13 @@ and our own Betfair Exchange reader had already moved (exchange sided with the l
 (2) when judging a close, ask when its value last CHANGED, not when we fetched it; (3) the exchange is the only live
 sharp price we hold. Open work: [[#188]].
 
+
+## 89. `rating_1x2_predictions` / `ou_model_predictions` are LATEST-ONLY — backtest from `model_prediction_history` (#191, 2026-09-26)
+
+Both tables are upserted by every 30-min refresh (historically sometimes after kick-off), so a row read at
+settlement is NOT what a bot saw at decision time — backtesting a model bot on them is look-ahead. Since
+2026-09-26 every pre-kick-off change is appended to `model_prediction_history` (migration 479; `probs` jsonb:
+1x2 `{home,draw,away}`, O/U `{over,comb,pin}`). As-of query: `DISTINCT ON (match_id, model_version, market)
+… WHERE written_at <= <decision instant> ORDER BY match_id, model_version, market, written_at DESC`.
+Rows exist only where the value changed, so "no row since T" means "unchanged since the last row", not "missing".
+Nothing before 2026-09-26 — earlier windows have no point-in-time model record.

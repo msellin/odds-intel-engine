@@ -1,0 +1,26 @@
+# [[#191]] prerequisite: append-only model_prediction_history (migration 479), written by
+# workers/jobs/rating_1x2_shadow._write / _write_ou on every fit and 30-min refresh.
+# Pushed ~2026-09-26 21:00 UTC; the combined refresh runs at the start of every :05/:35 betting run.
+task: "#191"
+checks:
+  - name: history_1x2_rows_arriving
+    mode: now
+    sql: "SELECT count(*) FROM model_prediction_history WHERE model_version = 'r1x2_comb_v1' AND market = '1x2' AND written_at > now() - interval '6 hours'"
+    expect: "> 50"
+    run_after:
+      time: 2026-09-26T23:30:00Z
+    expires: "2026-09-27T12:00:00Z"
+  - name: history_ou_rows_arriving
+    mode: now
+    sql: "SELECT count(*) FROM model_prediction_history WHERE model_version = 'ou_comb_v1' AND written_at > now() - interval '6 hours'"
+    expect: "> 50"
+    run_after:
+      time: 2026-09-26T23:30:00Z
+    expires: "2026-09-27T12:00:00Z"
+  - name: history_never_post_kickoff
+    mode: now
+    sql: "SELECT count(*) FROM model_prediction_history h JOIN matches m ON m.id = h.match_id WHERE h.written_at >= m.date"
+    expect: "== 0"
+    run_after:
+      time: 2026-09-27T12:00:00Z
+    expires: "2026-09-28T12:00:00Z"

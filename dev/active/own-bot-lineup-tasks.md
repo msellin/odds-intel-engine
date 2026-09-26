@@ -10,7 +10,7 @@ Parent: PRIORITY_QUEUE.md #191 OWN-BOT-LINEUP-AND-ADMIN-BOTS-CLEANUP-2026-09-26
 - [ ] (d) /admin/bots → three blocks (PICKS · OWN · Instruments & history, the last only if it earns its place)
 - [ ] (e) More Estonian books (#101: Paf, Ninja, Optibet)
 - [x] "Settings unknown": bot_config export now also runs at every scheduler start (2e8c3561)
-- [ ] Append-only log of NEW+ / ou_comb_v1 predictions (rows are overwritten every 30 min) — prerequisite for MODEL backtests
+- [x] Append-only log of NEW+ / ou_comb_v1 predictions (rows are overwritten every 30 min) — prerequisite for MODEL backtests — done 2026-09-26: `model_prediction_history` (migration 479), history starts that day
 - [ ] Exchange close as the independent judge for OWN bots
 - [ ] Record lineup first-seen time (lineups_fetched_at is overwritten)
 - [ ] Fix "placeable" for sharp bots whose placement floor is an empty band

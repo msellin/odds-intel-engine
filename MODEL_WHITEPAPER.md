@@ -645,6 +645,15 @@ group used. Shadow only, like 4.4.
 Nothing that stakes or publishes reads it. Replacing the XGBoost/Poisson legs of the served blend is
 an owner decision, to be taken on the forward record from 2026-09-25.
 
+**Point-in-time history (#191, 2026-09-26, migration 479).** `rating_1x2_predictions` and `ou_model_predictions`
+hold only the LATEST value per key and are overwritten by every 30-min refresh, so the probability a bot saw at
+T-3h was lost by settlement and no model-based bot could be backtested honestly. Every write to either table now
+also appends to the private, append-only `model_prediction_history` (match, model_version, market, `probs` jsonb,
+`grp`, `minutes_to_kickoff`, `written_at`) in the same transaction — **pre-kick-off only** (`matches.date > now()`
+and `status = 'scheduled'`, checked in SQL; a CHECK refuses `minutes_to_kickoff <= 0`) and **only when `probs`
+changed** from the latest history row. Backtests read "as of T-x" with `DISTINCT ON (match_id, model_version,
+market) … WHERE written_at <= kickoff - x ORDER BY written_at DESC`. History starts 2026-09-26; nothing before.
+
 ---
 
 **NEW+ EV outlier bots (#141 B4, 2026-09-24).** `bot_combined_1x2_ev5_v1` / `_ev8_v1` use the combined probability
@@ -2192,7 +2201,7 @@ O3: requiring the quote ≥ 12 h before kickoff lifts it to CLV +7.5% / +6.9% wi
 the other books' consensus to be beaten too: +6.6% / +4.2%. Live: `bot_ou_sharp_early_v1`, `bot_ou_sharp_2anchor_v1`, paper.
 **Combined O/U model in production (#152, 2026-09-25).** `workers/model/combined_ou.py` (`ou_comb_v1`, byte-identical
 predictions to the #149 O1 research model) is fitted twice daily inside the 1X2 rating job and refreshed every 30 min;
-stored in `ou_model_predictions`. Served P(over) = Pinnacle where it prices the line, else the combined model.
+stored in `ou_model_predictions` (latest only; every pre-kick-off change is also appended to `model_prediction_history`, #191 — see §4.4b). Served P(over) = Pinnacle where it prices the line, else the combined model.
 **Served probability at decision time ([[#176]], 2026-09-26).** The probability a bot compares with a price must
 be computed from odds at least as new as that price. Two rules: (1) the NEW+ and O/U combiners are re-applied
 immediately before every betting evaluation (chained in `run_betting`), and the pipeline ignores any combined row
