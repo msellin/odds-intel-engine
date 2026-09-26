@@ -146,3 +146,18 @@ difference (+7.8 pp, p 0.30, n 3 / 3) is noise. `bot_ah_sharp_v1` unchanged.
 
 **What both tests say together:** the edge the bot takes lives on Pinnacle's MAIN line, usually early, when
 Pinnacle shows only that one rung — soft books do not misprice the other rungs relative to it.
+
+## NOTE 2026-09-26 — what the backtest's "decision instants" really were (retention), and lever 2
+**Retention.** `odds_snapshots` keeps only the opening, closing and latest pre-kickoff row per series once a
+match is ~1 day old (ANALYSIS_GOTCHAS §59; measured: 371k Pinnacle AH rows today vs ~11k/day a few days ago).
+So on 07-01 → 09-25 the backtest mostly compared each book's OPENING quote with Pinnacle's opening fetch, plus
+the close — not the every-30-minute latest quotes the live bot uses. Same caveat as O/U EARLY's backtest. It
+does not void the result; it is why the forward record decides.
+
+**Lever 2 (faster polling) — measured on untrimmed data, NOT worth building.** `scripts/analysis/ah_market/
+persistence_live.py`, last 30 h, 1,119 matches: Pinnacle AH is fetched every 30 min at every distance to
+kickoff. Opportunities (EV 3–15%, same fetch) LAST: early (12 h+) 903 episodes, median 150 min / 6 fetches,
+18% seen at one fetch only; late 1,174 episodes, median 90 min / 4 fetches, 14% one-fetch. Faster polling
+would add at most some of the short-lived kind, which is the kind most likely to be a feed blip. Side
+finding for 👥 PICKS: a published AH pick typically stays at a value price for 1.5–2.5 h — time for a
+reader to act.
