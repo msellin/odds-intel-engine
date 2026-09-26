@@ -53342,9 +53342,12 @@ def test_placer_skips_retired_bots():
     """#131 audit (2026-09-24): `load_picks` joined `bots` with no retired filter, unlike
     the pipeline (2026-09-14). Harmless while placement is paused; money-losing once
     re-armed with a stale bot list."""
-    import inspect
-    import scripts.place_coolbet_ui as pc
-    src = inspect.getsource(pc.load_picks)
+    # Read the FILE, not inspect.getsource(pc.load_picks): _router_offline swaps that attribute for a
+    # thread-local wrapper while a router test runs, and this test then read the wrapper's source
+    # (red in CI shard 1/4, 2026-09-26, green alone).
+    src = _engine_path("scripts/place_coolbet_ui.py").read_text()
+    src = src[src.index("def load_picks("):]
+    src = src[:src.index("\ndef ", 1)]
     assert "b.retired_at IS NULL AND b.is_active" in src
 
 
@@ -55814,7 +55817,10 @@ def test_spent_today_all_books():
     real_bet_id. Only tightens: measured over 30 days, the new count is >= the old one every day."""
     import inspect
     import scripts.place_coolbet_ui as ui
-    src = inspect.getsource(ui.spent_today)
+    # the FILE, not getsource(ui.spent_today): _router_offline swaps that attribute while a router test runs
+    src = _engine_path("scripts/place_coolbet_ui.py").read_text()
+    src = src[src.index("def spent_today("):]
+    src = src[:src.index("\ndef ", 1)]
     assert "rb.placed_real IS NOT FALSE" in src and "bookmaker = 'Coolbet'" not in src
     assert "pa.real_bet_id = rb.id AND pa.outcome = 'placed'" in src, "de-duplicated on real_bet_id"
     from workers.api_clients.db import execute_query

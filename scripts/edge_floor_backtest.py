@@ -41,8 +41,11 @@ from datetime import timezone
 from workers.api_clients.db import execute_query
 
 FLOORS = [0.00, 0.03, 0.05, 0.08, 0.10, 0.12, 0.13, 0.15, 0.18, 0.20, 0.30]
-_ACCESSIBLE = ("Coolbet", "Betano", "Unibet", "10Bet", "Betfair", "1xBet",
-               "Marathonbet", "Bet365", "William Hill")
+# #030 / #131 leftover (fixed 2026-09-26): this was a hard-coded 9-book list (Betano, AF Unibet, 10Bet,
+# Betfair, 1xBet, Marathonbet, Bet365, William Hill — most of them NOT bettable from Estonia) under the
+# name "_ACCESSIBLE". The one definition of the books we can bet is ACCESSIBLE_BOOKMAKERS.
+from workers.jobs.daily_pipeline_v2 import ACCESSIBLE_BOOKMAKERS  # noqa: E402
+_ACCESSIBLE = tuple(sorted(ACCESSIBLE_BOOKMAKERS))
 
 
 def _folds(items, key, n):
