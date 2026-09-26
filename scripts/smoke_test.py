@@ -56367,6 +56367,11 @@ def test_placement_gate_exposure_and_floor():
         cs.is_money_gate_ready = _this_thread_only(lambda: (True, None), o[2])
         pg.ui_place_enabled_bots = _this_thread_only(lambda: {"bot_coolbet_1x2_model_v1"}, o[3])
         pg.placement_path_bots = _this_thread_only(lambda: {"bot_coolbet_1x2_model_v1"}, o[4])
+        # DB-free: the real-bets exposure read is stubbed for THIS thread (a DB-outage test elsewhere in
+        # the 8-wide suite could otherwise leak its fake into place_coolbet_ui's execute_query binding).
+        import scripts.place_coolbet_ui as _pcu
+        _o_mx = _pcu.match_exposure
+        _pcu.match_exposure = _this_thread_only(lambda mids: {m: [] for m in mids}, _o_mx)
         P = {"match_id": "00000000-0000-0000-0000-000000000000", "market": "1x2", "selection": "home"}
         from datetime import datetime as _dt, timedelta as _td, timezone as _tz
         _ko = _dt.now(_tz.utc) + _td(hours=6)
@@ -56389,6 +56394,10 @@ def test_placement_gate_exposure_and_floor():
     finally:
         (cs.is_placement_paused, cs.is_real_money_armed, cs.is_money_gate_ready,
          pg.ui_place_enabled_bots, pg.placement_path_bots) = o
+        try:
+            _pcu.match_exposure = _o_mx
+        except NameError:
+            pass
     sb = inspect.getsource(up.stage_bet)
     assert "pick=bet, held=[], odds=outcome.odds" in sb
     ub = inspect.getsource(bpr._dispatch_unibet)
