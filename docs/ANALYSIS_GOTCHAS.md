@@ -3272,14 +3272,17 @@ control loses about the vig exactly as registered.
   the right measure for "did the book we bet at move against us" — it is the wrong one for "was the pick good".
 * **The mirror trap is the PINNACLE close for a Pinnacle-triggered bot** — if Pinnacle does not move, CLV = the trigger
   edge (≥ 3%) by construction. The independent judge for a sharp-anchored bot is `leg_clv_sharp.clv_cons` (≥ 5 books,
-  Pinnacle AND own book excluded — Pinnacle never enters the consensus input). **#150 result (2026-09-26, pre-registered,
-  `scripts/analysis/sharp_trigger_independent_clv.py`, Holm across judged bots):** `bot_trigger_1x2_sharp_tight_v1` +2.25%
-  [+1.0, +3.6] (n 210, cover 72%), `bot_unibet_trigger_sharp_1x2_v1` +6.48% [+3.3, +9.8] (n 127, cover 48%),
-  `bot_coolbet_trigger_sharp_1x2_v1` +4.61% [+1.8, +7.5] (n 108, cover 39%) = **independent edge**; `bot_trigger_1x2_sharp_v1`
-  +2.2% and `bot_sharp_1x2_v1` +1.1% undetermined; every O/U sharp bot < 50 legs. All executable/published prices (no §30
-  high-water inflation). ⚠️ Coverage: judged only on legs with a ≥ 5-book close (39–48% for the per-book triggers), i.e. the
-  better-covered fixtures — do not extrapolate to the thin ones. It is CLV evidence, not a real-money licence: the
-  per-book prices are still the soft book's quote as recorded (#172 re-prices at the books we can actually bet).
+  Pinnacle AND own book excluded — Pinnacle never enters the consensus input). **#150 result (2026-09-26, pre-registered + AMENDMENT 1 the same day,
+  `scripts/analysis/sharp_trigger_independent_clv.py`, Holm across judged bots): NO sharp bot shows an independent
+  edge yet.** At the PICK-TIME price (own book's latest quote ≤ pick_time, ≤ 180 min): tight +1.24% [−0.0, +2.7] (n 205),
+  Unibet 1X2 trigger +2.58% [−0.7, +5.8] (n 108), Coolbet 1X2 trigger +2.67% [−0.4, +5.7] (n 96), `bot_trigger_1x2_sharp_v1`
+  +1.1%, `bot_sharp_1x2_v1` +1.2% — all undetermined (Holm p ≥ 0.126); O/U sharp bots < 50 legs. ⚠️ **The first run said
+  "independent edge" for three bots (+2.25 / +6.48 / +4.61%) — WRONG: it used the RECORDED price, and until #162 W2.1
+  (c070e737, 2026-09-25 15:16 UTC) the paper writers rewrote a shadow pick's price on every re-sweep, so pre-fix rows carry
+  a later, higher price (checked: 411/758 pre-fix sharp legs match the pick-time snapshot vs 249/250 after the fix;
+  `odds_basis='executable'` does NOT protect — odds_at_pick_live was rewritten too).** Rule: for ANY shadow-bot leg picked
+  before 2026-09-25 15:16 UTC, price it from odds_snapshots at pick_time, never from the stored odds ([[#179]]). Coverage
+  35–41% on the per-book triggers (legs with a ≥ 5-book close only).
 * Where it is used now: the forward test's amended stop rule (`scripts/picks_forward_test_checkpoint.py`, prereg
   AMENDMENT 1) and the /performance CLV for the forward-test bots (view `picks_forward_test_anchor_clv`, migration 430). **Since migration 454 ([[#162]] W6.3) the precedence is ONE SQL function** — `anchor_source(status, cons_status)`, with `anchor_clv(status, cons_status, clv_sharp, clv_cons)` for the stored CLV and `anchor_p_close(…)` for the close probability — used by `picks_forward_test_anchor_clv`, `picks_forward_test_bot_record`, `bot_ledger` and the checkpoint script. **In a new query call `anchor_clv()`; do not re-type the CASE.** (Recomputing `odds × p_close − 1` instead of the stored value differs in the 16th digit on most legs — harmless for analysis, but not what the pre-registered numbers use.) Since [[#159]] the same close judges EVERY bot — see §86. Since [[#158]] /performance reads the same definition from `picks_forward_test_bot_record` (migration 431), whose "current" record also includes earlier-rule picks that passed the current rule on pick-time data — **query `picks_forward_test_summary` (rule_version as published), not the bot record, for anything about the pre-registered test.**
 

@@ -30,6 +30,16 @@ PRE-REGISTRATION (written before the first run, 2026-09-26; nothing below is tun
               (§30: 'high_water' would inflate), and coverage = legs with a consensus close /
               settled legs.
 
+AMENDMENT 1 (2026-09-26, same day, BEFORE any decision was taken on the first run). The #172 study
+found recorded prices that match a snapshot written 20-80 min AFTER the pick: until #162 W2.1
+(c070e737, 2026-09-25 15:16 UTC) the paper writers rewrote a shadow pick's price on every re-sweep
+(DO UPDATE), and 22-52% of rows carry a price above the pick-time quote — `odds_basis='executable'`
+does not protect against it (odds_at_pick_live was rewritten too). The verdict therefore uses the
+PICK-TIME price: the leg's own book's latest pre-kickoff odds_snapshots quote at or before pick_time,
+no older than ODDS_FRESH_MAX_MIN (180 min, best_price_router) — clv_cons re-derived as
+snap_odds × p_close_cons − 1. The first run's recorded-price column is kept beside it for contrast.
+Everything else (population, n >= 50, bootstrap, Holm, verdict rules) is unchanged.
+
 Read-only. Prints a table and writes data/models/_research/sharp150/results.json (gitignored).
 
     python3 scripts/analysis/sharp_trigger_independent_clv.py
@@ -47,6 +57,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 N_MIN = 50
+FRESH_MIN = 180   # best_price_router.ODDS_FRESH_MAX_MIN (Amendment 1)
 B = 10_000
 SEED = 150
 ALPHA = 0.05
@@ -57,8 +68,10 @@ def load(bots: list[str]) -> list[dict]:
     return execute_query(
         """
         SELECT l.bot_name, l.match_id::text AS match_id, l.market, l.result,
-               c.clv_cons::float AS clv_cons, c.cons_status, c.cons_n_books,
-               c.clv_sharp::float AS clv_sharp, c.status AS pin_status, c.odds_basis
+               c.clv_cons::float AS clv_cons_recorded, c.cons_status, c.cons_n_books,
+               c.clv_sharp::float AS clv_sharp, c.status AS pin_status, c.odds_basis,
+               c.p_close_cons::float AS p_close_cons, snap.odds::float AS snap_odds,
+               (snap.odds * c.p_close_cons - 1)::float AS clv_cons
           FROM bot_ledger l
           JOIN leg_clv_sharp c
             ON c.leg_id = l.pick_id
@@ -66,8 +79,15 @@ def load(bots: list[str]) -> list[dict]:
                                         WHEN 'shadow' THEN 'shadow_bets'
                                         WHEN 'forward_test' THEN 'picks_forward_test'
                                         ELSE l.source END
+          LEFT JOIN LATERAL (
+                SELECT o.odds FROM odds_snapshots o
+                 WHERE o.match_id = l.match_id AND o.market = l.market AND o.selection = l.selection
+                   AND o.bookmaker = l.bookmaker AND o.is_live IS NOT TRUE
+                   AND o."timestamp" <= l.pick_time
+                   AND o."timestamp" >= l.pick_time - make_interval(mins => %s)
+                 ORDER BY o."timestamp" DESC LIMIT 1) snap ON true
          WHERE l.bot_name = ANY(%s) AND l.result IN ('won', 'lost') AND NOT l.is_inplay
-        """, (bots,)) or []
+        """, (FRESH_MIN, bots)) or []
 
 
 def settled_counts(bots: list[str]) -> dict[str, int]:
@@ -110,6 +130,7 @@ def main() -> None:
     for bot in bots:
         legs = [r for r in rows if r["bot_name"] == bot]
         ok = [r for r in legs if r["cons_status"] == "ok" and r["clv_cons"] is not None]
+        rec = [r["clv_cons_recorded"] for r in legs if r["cons_status"] == "ok" and r["clv_cons_recorded"] is not None]
         by_match: dict[str, list[float]] = defaultdict(list)
         for r in ok:
             by_match[r["match_id"]].append(r["clv_cons"])
@@ -117,6 +138,8 @@ def main() -> None:
              "coverage": (len(ok) / settled[bot]) if settled.get(bot) else None}
         pin = [r["clv_sharp"] for r in ok if r["pin_status"] == "ok" and r["clv_sharp"] is not None]
         d["odds_basis"] = sorted({r["odds_basis"] for r in ok if r["odds_basis"]})
+        d["clv_cons_recorded_price"] = float(np.mean(rec)) if rec else None
+        d["n_recorded"] = len(rec)
         d["clv_pinnacle_same_legs"] = float(np.mean(pin)) if pin else None
         if ok:
             d["mean"], d["p"], d["lo"], d["hi"] = boot(by_match, rng)
@@ -138,13 +161,13 @@ def main() -> None:
 
     fmt = lambda x: "   —  " if x is None else f"{x*100:+6.2f}%"
     print(f"{'bot':36} {'settled':>7} {'n_cons':>6} {'cover':>6}  {'CLV cons':>8} {'95% CI':>17}  "
-          f"{'p_holm':>6}  {'Pin CLV':>8}  basis / verdict")
+          f"{'p_holm':>6}  {'@record':>8}  verdict")
     for b, d in sorted(per.items(), key=lambda kv: -kv[1]["n"]):
         ci = f"[{d['lo']*100:+.1f},{d['hi']*100:+.1f}]" if "lo" in d else ""
         cov = f"{d['coverage']*100:5.0f}%" if d["coverage"] is not None else "   — "
         ph = f"{d['p_holm']:.3f}" if "p_holm" in d else "  —  "
         print(f"{b:36} {d['settled']:7d} {d['n']:6d} {cov}  {fmt(d.get('mean'))} {ci:>17}  {ph:>6}  "
-              f"{fmt(d['clv_pinnacle_same_legs'])}  {'+'.join(d['odds_basis'])} / {d['verdict']}")
+              f"{fmt(d['clv_cons_recorded_price'])}  {d['verdict']}")
 
     out = ROOT / "data/models/_research/sharp150"
     out.mkdir(parents=True, exist_ok=True)

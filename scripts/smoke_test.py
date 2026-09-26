@@ -57071,8 +57071,12 @@ def test_sharp_independent_close():
         "Pinnacle quotes must go to the Pinnacle close only, never into the consensus input"
     assert 'exclude_book=l.get("bk")' in src, "the leg's own book must be excluded from its consensus close"
     a = _engine_path("scripts/analysis/sharp_trigger_independent_clv.py").read_text()
-    for pin in ("N_MIN = 50", "B = 10_000", "SEED = 150", 'r["cons_status"] == "ok"', "def holm(", "PRE-REGISTRATION"):
-        assert pin in a, pin
+    for pin in ("N_MIN = 50", "B = 10_000", "SEED = 150", 'r["cons_status"] == "ok"', "def holm(", "PRE-REGISTRATION",
+                "AMENDMENT 1", "FRESH_MIN = 180", '(snap.odds * c.p_close_cons - 1)::float AS clv_cons'):
+        assert pin in a, pin   # verdict at the PICK-TIME price (pre-W2.1 recorded prices are inflated, #179)
+    r = _engine_path("scripts/analysis/own_track_estonian_reprice.py").read_text()
+    assert "ACCESSIBLE_BOOKMAKERS" in r and "ODDS_FRESH_MAX_MIN" in r, "#172 re-price uses the bettable set and the router freshness"
+    assert "Parent row: [[#172]]" in _engine_path("dev/active/own-track-estonian-reprice-findings.md").read_text()
     return "Pinnacle out of the consensus input, own book excluded, analysis design fixed"
 
 
