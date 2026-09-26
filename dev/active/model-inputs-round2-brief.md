@@ -12,7 +12,7 @@ Status as of 2026-09-25 evening (the bots session closed everything else it owne
 
 | Prerequisite | Why it blocks | Status |
 |---|---|---|
-| [[#152]] `bot_v10_ou_comb_v1` generating picks | it is the live O/U comparison bot for `ou_comb_v1`; round 2 needs a working baseline bot to twin against. It made 0 picks at its first refresh although ~26 candidate legs existed | fix in flight in the bots session — check `ops/verify/` / `verify_results` for its first-picks check, and the #152 row |
+| [[#152]] `bot_v10_ou_comb_v1` generating picks | the live O/U comparison bot for `ou_comb_v1` | ✅ resolved 2026-09-26 — 0 picks at first refresh was by design (Pinnacle-required + implied-sum gates); first picks landed from 2026-09-25 16:05 |
 | [[#162]] bot refactor phase 3 (other session) | it rewrites the bot object / `BOTS_CONFIG` / the pipeline's shadow passes. RESEARCH and backtests for #154 can start any time, but SHIPPING a twin bot (config + migration + registry) must wait for #162's pipeline changes to land, or be agreed with that session first | 🔄 #162 — ask it before touching `daily_pipeline_v2.py` |
 | [[#176]] served probability fresh at decision time | every model backtest/live comparison assumes the bots decide on the CURRENT probability; found 2026-09-26 that the model refresh (:10/:40) ran AFTER the betting refresh (:05/:35), so picks used a ~25-min-old p (O/U twin picked at −9.7% EV vs Pinnacle). Round-2 evaluation of live picks must use only picks made after #176 lands, or flag the earlier ones | 🔄 agent in flight 2026-09-26 — if the row is still 🔄 with no owner, its uncommitted edits sit in `workers/jobs/betting_pipeline.py`, `daily_pipeline_v2.py`, `workers/model/combined_ou.py`, `workers/scheduler.py` |
 | Data coverage for idea 3 | Betfair (`exchange_quotes`) and `book_fair_probs` are young (fair probs since 2026-09-23) | measure rows per market/day first; if too thin, pre-register idea 3 for later |
@@ -39,6 +39,8 @@ Bots that consume them (changing the model changes these — see §5):
 - ⭐ VIP `bot_combined_1x2_ev5_v1` (NEW+, EV = p×odds−1 ≥ 5%, Pinnacle required, odds 1.30–6.00, one/match).
 - `bot_v10_1x2_newplus_v1` (NEW+, EV ≥ 3%, odds 1.30–3.00, TESTING).
 - `bot_v10_ou_comb_v1` (ou_comb_v1, EV ≥ 3%, odds 1.30–3.00, min_prob 0.30, one/match, TESTING).
+- Statuses since #175: EXPERIMENTAL → TESTING → ACTIVE (50 settled, sharp CLV > 0); public Telegram = ACTIVE + TESTING at EV ≥ 5% (#174).
+- O/U TWO-ANCHOR (`bot_ou_sharp_2anchor_v1`, experimental) vs VIP O/U EARLY: owner review when both reach 50 settled (reminder `ops/verify/149-ou-vip-vs-two-anchor-review.yml`); at 09-26 TWO-ANCHOR CLV +3.3% (n 36) vs EARLY −1.0% (n 11).
 - ⭐ VIP `bot_ou_sharp_early_v1` uses NO model — Pinnacle power-de-vigged fair price, EV 5–15%, quote ≥ 12 h out.
   O/U model only matters for it if it beats Pinnacle (idea 1 success bar).
 
