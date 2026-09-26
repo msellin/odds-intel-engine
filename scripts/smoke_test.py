@@ -56856,5 +56856,43 @@ def test_public_telegram_one_rule_ev5():
     assert sig._format_market_public("over_under_25", "over") == "Over 2.5 goals"
     return "one rule, both senders, EV5 pinned, placement floor operator-only"
 
+
+
+@test("BOT-RECORD-RESTART — a bot's record can restart at a rule change; sent picks never leave it (#177)")
+def test_bot_record_restart():
+    """[[#177]] owner decision (c): the three bots whose picks read a ~25-min-old probability until
+    the #176 fix restart their record at the fix. Migration 463: bots.record_restart_at; bot_ledger's
+    simulated + shadow branches put picks before it OUT of the record (record_state 'before_restart')
+    UNLESS the pick was sent (pick_sends status 'sent' -> 'sent_before_restart', kept). The registry's
+    rule_version and the migration's must agree, or the stamping trigger tags new picks wrongly."""
+    mig = _engine_path("supabase/migrations/463_bot_record_restart.sql").read_text()
+    led = mig[mig.index("CREATE OR REPLACE VIEW public.bot_ledger AS"):]
+    assert "true AS in_record" not in led, "sim/shadow branches must compute in_record"
+    assert led.count("b.record_restart_at IS NULL OR s.pick_time >= b.record_restart_at") == 2
+    assert led.count("b.record_restart_at IS NULL OR sh.pick_time >= b.record_restart_at") == 2
+    assert led.count("ps.status = 'sent'::text") == 4, "a sent pick must stay in the record"
+    assert "'sent_before_restart'::text" in led and "'before_restart'::text" in led
+    import re
+    from workers.registry.bot_registry import by_name
+    for name, rv in re.findall(r"\('(bot_[a-z0-9_]+)',\s*'(r\d+)'\)", mig):
+        assert by_name(name).rule_version == rv, f"{name}: registry {by_name(name).rule_version} vs migration {rv}"
+    from workers.api_clients.db import execute_query
+    have = execute_query("SELECT 1 FROM information_schema.columns WHERE table_name = 'bots' "
+                         "AND column_name = 'record_restart_at'", [])
+    if not have:
+        return "463 not applied yet — source pins only"
+    bad = execute_query("""
+        SELECT l.bot_name, l.pick_id FROM bot_ledger l JOIN bots b ON b.name = l.bot_name
+         WHERE l.source IN ('sim', 'shadow') AND b.record_restart_at IS NOT NULL
+           AND l.pick_time < b.record_restart_at AND l.in_record
+           AND NOT EXISTS (SELECT 1 FROM pick_sends ps WHERE ps.pick_id = l.pick_id AND ps.status = 'sent')
+         LIMIT 5""", [])
+    assert not bad, f"unsent pre-restart picks still in the record: {bad}"
+    lost = execute_query("""
+        SELECT l.bot_name, l.pick_id FROM bot_ledger l JOIN pick_sends ps ON ps.pick_id = l.pick_id
+         WHERE ps.status = 'sent' AND l.source IN ('sim', 'shadow') AND NOT l.in_record LIMIT 5""", [])
+    assert not lost, f"a SENT pick fell out of the record: {lost}"
+    return "pre-restart unsent picks out, every sent pick in"
+
 if __name__ == "__main__":
     main()

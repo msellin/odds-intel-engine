@@ -2182,7 +2182,7 @@ older than 20 min; (2) for O/U, at decision time, where Pinnacle has a pre-match
 concentrated exactly where Pinnacle had just priced a line the stored row still priced from the books-only group
 (e.g. over 2.5 @ 2.62 on p 0.420 vs Pinnacle 0.345, EV −9.7%). On picks reconstructed over the 7 days to 2026-09-26, the fresh p
 would have removed 44/91 NEW+ EV5, 9/108 NEW+ EV3 and 21/26 combined-O/U picks — their recorded edge was mostly
-staleness, so their early records overstate the rule. On the O1
+staleness, so their early records overstate the rule. **Resolved 2026-09-26 ([[#177]], migration 463): the three records RESTART at the fix** — earlier picks stay in the ledger but out of the record, except picks already sent to users. On the O1
 holdout it beat the served O/U ensemble on every line (1.5: 0.5655 vs 0.5934; 2.5: 0.6738 vs 0.7086; 3.5: 0.6428 vs 0.6961 —
 the ensemble was worse than the base rate on all three).
 **Existing model bots on the new models (#152 step 3, 2026-09-25).** A per-bot counterfactual (12 configs each, select/confirm

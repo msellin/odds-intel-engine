@@ -1,0 +1,23 @@
+# [[#177]] record restart at the #176 fix — checked by job_verify_queue (WORKFLOWS.md, VERIFY-QUEUE)
+task: "#177"
+checks:
+  - name: migration_463_applied
+    mode: eventually
+    sql: "SELECT count(*) FROM bots WHERE record_restart_at IS NOT NULL"
+    expect: "== 3"
+    expires: "2026-09-28T00:00:00Z"
+  - name: new_picks_carry_restarted_rule_version
+    mode: invariant
+    sql: >
+      SELECT count(*) FROM simulated_bets s JOIN bots b ON b.id = s.bot_id
+       WHERE b.record_restart_at IS NOT NULL AND s.pick_time >= b.record_restart_at
+         AND s.rule_version IS DISTINCT FROM b.rule_version
+    expect: "== 0"
+    expires: "2026-10-10T00:00:00Z"
+  - name: no_sent_pick_out_of_record
+    mode: invariant
+    sql: >
+      SELECT count(*) FROM bot_ledger l JOIN pick_sends ps ON ps.pick_id = l.pick_id
+       WHERE ps.status = 'sent' AND l.source IN ('sim','shadow') AND NOT l.in_record
+    expect: "== 0"
+    expires: "2026-10-31T00:00:00Z"

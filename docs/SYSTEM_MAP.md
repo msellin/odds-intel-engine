@@ -710,6 +710,17 @@ has more than one version. `bot_performance` and it are the two groupings of ONE
 **`bot_performance` — and so every public headline — still POOLS all versions**; showing only the current rule
 publicly is an owner decision, not done. `bot_config.gates` carries `pick_rule_version` (the tag new picks get).
 
+**Record restart (migration 463, [[#177]], smoke `BOT-RECORD-RESTART`).** Pooling stays the default, but a bot can
+have its record RESTARTED at a rule change: `bots.record_restart_at` (+ `record_restart_reason`). Picks before it
+are out of `bot_ledger.in_record` (so out of `bot_performance`, every headline and `bot_performance_by_rule`) with
+`record_state = 'before_restart'` — still in the ledger, still visible. **A pick that was SENT to anyone**
+(`pick_sends.status = 'sent'`, any channel) **never leaves the record** (`record_state = 'sent_before_restart'`).
+Used once so far (owner decision (c), 2026-09-26): `bot_combined_1x2_ev5_v1` → r3, `bot_v10_1x2_newplus_v1` → r2,
+`bot_v10_ou_comb_v1` → r3, restart at 2026-09-26 07:51:44 UTC — the #176 fix (066a9847); earlier picks read a
+~25-min-old model probability. Why restart and not drop the counterfactual misses: dropping can only REMOVE picks
+the fresh probability would not have made, never add the ones it would have, so the result is the record of a rule
+that never ran. To restart another bot: bump its `rule_version` and set `record_restart_at` in one migration.
+
 ## Lifecycle — ONE STATUS DECIDES DISTRIBUTION ([[#155]], owner 2026-09-25)
 
 **EXPERIMENTAL → TESTING → ACTIVE → RETIRED**, ⭐ VIP a channel on top. **CHANGED 2026-09-26 ([[#175]],
