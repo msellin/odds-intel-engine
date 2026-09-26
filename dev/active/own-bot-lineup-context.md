@@ -12,5 +12,12 @@ Known facts going in:
 - Guards live on the OWN board/bot: v2 anchor, market split (match-wide), de-vig robustness (Shin AND power), 60-min freshness.
 - Existing OWN bot: bot_own_1x2_v1 (1X2 · SHARP · last 3 h · best Estonian book), migration 473/477.
 
-Decisions: (pending owner approval of the audit table)
+Decisions:
+- 2026-09-26 owner: OWN bots are NOT take-overs. PICKS bots can never become OWN bots (they price at global books).
+  Each OWN market × method bot starts from CANDIDATE rules, is BACKTESTED re-priced at the best Estonian book at pick
+  time (point-in-time), and IMPROVED (floors, timing window, #182 guards, model+sharp agreement) on discovery data,
+  confirmed on holdout. MODEL bots must use the LATEST models underneath (1X2 NEW+ r1x2_comb_v1, O/U ou_comb_v1);
+  SHARP bots the v2 anchor.
+- Instruments block only if it is clean and intuitive (owner sceptical).
+Pending: owner approval of the audit table.
 Next steps: see own-bot-lineup-tasks.md.
