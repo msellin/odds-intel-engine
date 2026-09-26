@@ -115,6 +115,14 @@ _refused_by_col = True  # False once the DB says migration 445 is not applied (t
 _by: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 _caller = threading.local()
 _requests_by_col = True  # False once the DB says migration 465 is not applied
+# Monotonic per-process count of requests SENT per book (never flushed / reset) — lets a caller measure
+# what one pass of its own spent (PASS-PACING, #142): process_requests(book) before and after.
+_process_total: dict[str, int] = defaultdict(int)
+
+
+def process_requests(book: str) -> int:
+    with _lock:
+        return _process_total[book]
 
 
 def set_caller(label: str | None) -> None:
@@ -213,6 +221,7 @@ def record(book: str, outcome: str = "ok", seconds: float | None = None, *,
             p["requests"] += 1
             _pending_n += 1
             _by[book][_caller_label()] += 1
+            _process_total[book] += 1
         if outcome == "challenge":
             p["challenges"] += 1
         elif outcome == "error":

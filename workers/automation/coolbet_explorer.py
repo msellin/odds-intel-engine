@@ -2131,6 +2131,30 @@ _LISTING_CACHE: dict[str, tuple[datetime, list]] = {}
 LISTING_REUSE_MAX_MIN = 55
 
 
+# PASS-PACING ([[#142]], 2026-09-26). The sweep runs twice an hour, and one pass could spend the whole
+# hour's budget (09:03 on 2026-09-26: 488 of 500 by 09:16), so the next pass failed outright and the
+# must-run callers (near-kickoff closing capture, health ping) were refused. Each pass now owns at most
+# PASS_BUDGET_SHARE of the hourly budget: past it, a category is listed only from cache (any age) and every
+# fixture outside the every-pass tier is deferred — the < 3 h fixtures are still fetched. The category order
+# rotates each pass (_SWEEP_OFFSET) so the categories at the end of the list are not always the ones starved.
+PASS_BUDGET_SHARE = 0.45
+_SWEEP_ROTATE = 37
+_SWEEP_OFFSET = 0
+
+
+def _pass_budget() -> int | None:
+    cap = footprint.budget("Coolbet")
+    return int(cap * PASS_BUDGET_SHARE) if cap else None
+
+
+def _rotated(cats: list, offset: int) -> list:
+    """Pure. The same categories, starting at `offset` (mod len)."""
+    if not cats:
+        return cats
+    k = offset % len(cats)
+    return cats[k:] + cats[:k]
+
+
 def _listing_reusable(cached, now) -> bool:
     """Pure. True when a cached (fetched_at, events) listing may stand in for a fresh one: younger
     than LISTING_REUSE_MAX_MIN and no OPEN event in it is inside the every-pass tier (or unparsable)."""
@@ -2185,6 +2209,14 @@ def run_board_sweep(
         session = CoolbetSession(require_auth=False)
 
     cats = enumerate_coolbet_football_categories(session)
+    global _SWEEP_OFFSET
+    cats = _rotated(cats, _SWEEP_OFFSET)          # PASS-PACING: a different category leads each pass
+    _SWEEP_OFFSET += _SWEEP_ROTATE
+    pass_start = footprint.process_requests("Coolbet")
+    pass_cap = _pass_budget()
+
+    def _over_pass_budget() -> bool:
+        return pass_cap is not None and footprint.process_requests("Coolbet") - pass_start >= pass_cap
     if not cats:
         # Loud, not silent: an empty enumeration means the whole pass wrote
         # nothing, which starves the placement price feed. Surface it as an
@@ -2256,6 +2288,13 @@ def run_board_sweep(
         if _listing_reusable(cached, now):
             events = cached[1]                       # LISTING-REUSE (#142): no request
             c["listings_reused"] = c.get("listings_reused", 0) + 1
+        elif _over_pass_budget():
+            # PASS-PACING (#142): this pass has spent its share — cached listing of any age, else skip
+            if not cached:
+                c["pass_budget_skipped_cats"] = c.get("pass_budget_skipped_cats", 0) + 1
+                continue
+            events = cached[1]
+            c["listings_reused"] = c.get("listings_reused", 0) + 1
         else:
             try:
                 events = fetch_events_for_league(session, cat["id"], raise_on_error=True)
@@ -2293,7 +2332,7 @@ def run_board_sweep(
             # their last price until a quieter pass. On 09-25 the sweep alone spent the 500 and
             # the near-kickoff closing capture was refused at 14:53 and 14:59.
             if (last_stored.get(str(af_row["id"])) is not None and not _within_every_pass_tier(cb_start, now)
-                    and not footprint.has_headroom("Coolbet")):
+                    and (not footprint.has_headroom("Coolbet") or _over_pass_budget())):
                 c["reserve_deferred"] = c.get("reserve_deferred", 0) + 1
                 continue
             try:
@@ -2340,7 +2379,9 @@ def run_board_sweep(
         f"{c['events_seen']} events ({c['near_term']} near-term), matched {c['matched']}, "
         f"unmatched {c['unmatched']}, stored {c['stored_rows']} rows"
         f"{', deferred for the budget reserve ' + str(c['reserve_deferred']) if c.get('reserve_deferred') else ''}"
-        f"{', listings reused ' + str(c['listings_reused']) if c.get('listings_reused') else ''}[/cyan]"
+        f"{', listings reused ' + str(c['listings_reused']) if c.get('listings_reused') else ''}"
+        f"{', categories skipped for the pass budget ' + str(c['pass_budget_skipped_cats']) if c.get('pass_budget_skipped_cats') else ''}"
+        f", pass spent {footprint.process_requests('Coolbet') - pass_start}/{pass_cap}[/cyan]"
     )
     c["categories"] = len(cats)
 

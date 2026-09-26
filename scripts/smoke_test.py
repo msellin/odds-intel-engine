@@ -57320,5 +57320,30 @@ def test_shadow_own_price_pick_time():
     return "own basis re-priced at pick time for pre-W2.1 picks; stored odds untouched"
 
 
+@test("COOLBET-PASS-PACING — one board pass cannot spend the hour: capped share, cached listings, rotating order (#142)")
+def test_coolbet_pass_pacing():
+    """[[#142]]: 2026-09-26 09:03 one pass spent 488 of the 500/h; the 09:33 pass then failed outright and
+    the near-kickoff closing capture + health ping were refused. A pass now owns PASS_BUDGET_SHARE of the
+    hour (measured with footprint.process_requests, exact per process); past it only every-pass (< 3 h)
+    fixtures are fetched and listings come from cache. Category order rotates each pass."""
+    import inspect
+    from workers.automation import coolbet_explorer as ce
+    from workers.utils import footprint as fp
+    assert ce.PASS_BUDGET_SHARE <= 0.5, "two passes an hour must both fit, with room for the must-run callers"
+    assert ce._pass_budget() == int(fp.budget("Coolbet") * ce.PASS_BUDGET_SHARE)
+    assert ce._rotated([1, 2, 3, 4], 5) == [2, 3, 4, 1] and ce._rotated([], 3) == []
+    before = fp.process_requests("SmokeBook-pass")
+    fp.record("SmokeBook-pass", "ok")
+    fp.record("SmokeBook-pass", "challenge", count_request=False)
+    assert fp.process_requests("SmokeBook-pass") == before + 1, "only SENT requests count toward a pass"
+    with fp._lock:
+        fp._pending.pop("SmokeBook-pass", None); fp._by.pop("SmokeBook-pass", None)
+    src = inspect.getsource(ce.run_board_sweep)
+    assert "cats = _rotated(cats, _SWEEP_OFFSET)" in src and "pass_start = footprint.process_requests(\"Coolbet\")" in src
+    assert "elif _over_pass_budget():" in src and "or _over_pass_budget())" in src
+    assert src.index("_listing_reusable(cached, now)") < src.index("elif _over_pass_budget():") < src.index("fetch_events_for_league(session, cat")
+    return f"pass cap {ce._pass_budget()} of {fp.budget('Coolbet')}/h"
+
+
 if __name__ == "__main__":
     main()

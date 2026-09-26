@@ -690,6 +690,11 @@ escalates; it does not.
   one sweep, ~160 of it category LISTINGS. Fix (LISTING-REUSE, #142): a category's listing is re-fetched
   only when one of its fixtures is < 3 h from kickoff, else the previous pass's listing (< 55 min, same
   process) is reused; the sweep summary line says `listings reused N`.
+  **PASS-PACING (#142, same day):** one pass still spent 488/500 at 09:03 (listing reuse cannot help the first
+  pass after a restart). Each board pass now owns `PASS_BUDGET_SHARE` (45% → 225 of 500) measured exactly with
+  `footprint.process_requests`; past it, listings come from cache (any age, else the category waits a pass)
+  and only < 3 h fixtures are fetched. Category order rotates each pass. Summary line: `pass spent N/225`,
+  `categories skipped for the pass budget N`.
 - **And the sweep itself shrank (#091, 2026-09-23):** the scheduled job now runs the
   board sweep, not `run_bulk`'s search fallback. Verify coverage any time, from an
   IP Coolbet is not blocking, with `scripts/coolbet_board_coverage_diff.py
