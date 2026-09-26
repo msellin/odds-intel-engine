@@ -34163,6 +34163,10 @@ def test_settlement_golden():
     every row's result+pnl+clv exactly. A single mismatch means the refactor
     changed a real settlement outcome — fail loudly.
     """
+    # [[#187]] 2026-09-26: 36 golden rows were REGENERATED on purpose — every asian_handicap QUARTER line
+    # (±0.25/±0.75/±1.25…) whose outcome is a half result. The old golden pinned the bug (a home -1.25
+    # one-goal win graded as a full loss); each new row was checked against an independent split-stake
+    # computation before it was written. No other market's row changed.
     import os, json
     from workers.jobs.settlement import settle_bet_result
     fx = os.path.join(os.path.dirname(__file__), "fixtures", "settlement_golden.json")
@@ -56757,6 +56761,74 @@ def test_pnl_chart_sharp_line():
     assert "getSharpDailyCurve(" in page and "LEDGER_BACKED_BOTS.has(b)" in page, "ACTIVE ledger-backed bots only"
     ch = (web / "src/components/performance-pnl-chart-toggle.tsx").read_text()
     assert 'dataKey="sharp"' in ch and "also inside the total" in ch
+
+
+@test("AH-MARKET-BOT — Asian handicap bot: quarter lines half-settled, rung-keyed pricing/CLV, pre-registered rule (#187)")
+def test_ah_market_bot():
+    """[[#187]] (owner 2026-09-26): the third market. Pins (1) quarter-line settlement = half win / half
+    loss with settle_fraction 0.5 (it graded them as a full win/loss); (2) the rung key is identical in
+    Python and SQL; (3) pick_price and clv_sharp price an AH leg on ITS rung; (4) bot_ledger's sim P&L
+    uses settle_fraction; (5) the bot's decision = the pre-registered rule (EV 3-15%, same fetch, ladder
+    guard, one pick per match, API-Football books only)."""
+    import inspect
+    import pathlib as _pl
+    from workers.jobs.settlement import settle_bet_result as S
+    from workers.utils.anchor import ah_line_market, ah_split_selection, market_sides
+    import workers.jobs.ah_sharp_outlier as ah
+    import workers.jobs.clv_sharp as cs
+    import workers.utils.pick_price as pp
+
+    def r(sel, h, a):
+        x = S({"market": "asian_handicap", "selection": sel, "stake": 10, "odds_at_pick": 2.0, "match_id": None}, h, a, None)
+        return x["result"], x["pnl"], x.get("settle_fraction", 1.0)
+    assert r("home -0.25", 1, 1) == ("lost", -5.0, 0.5), "quarter draw = HALF loss"
+    assert r("home -0.75", 2, 1) == ("won", 5.0, 0.5), "quarter one-goal win = HALF win"
+    assert r("away -0.75", 2, 1) == ("lost", -5.0, 0.5)
+    assert r("home -1.25", 2, 1) == ("lost", -5.0, 0.5) and r("home -1.75", 3, 1) == ("won", 5.0, 0.5)
+    assert r("home -1", 2, 1) == ("void", 0.0, 1.0) and r("home -0.5", 1, 1) == ("lost", -10.0, 1.0)
+    assert r("home -0.75", 3, 1) == ("won", 10.0, 1.0)
+
+    assert ah_line_market(-0.75) == "asian_handicap:-0.75" and ah_line_market(-0.0) == "asian_handicap:0"
+    assert ah_line_market(1.0) == "asian_handicap:1" and ah_split_selection("away +0.5") == ("away", 0.5)
+    assert market_sides("asian_handicap:-0.75") == ("home", "away")
+    sql_key = "'asian_handicap:' || (o.handicap_line::float8)::text"
+    assert sql_key in inspect.getsource(ah.load_lines) and sql_key in inspect.getsource(cs.run)
+    assert "o.handicap_line = b.ah_line" in pp._BEST and "ah_line" in pp._LEGS
+    leg = cs._ah_leg({"market": "asian_handicap", "selection": "home -0.75"})
+    assert leg["market"] == "asian_handicap:-0.75" and leg["selection"] == "home" and leg["orig_selection"] == "home -0.75"
+
+    root = _pl.Path(__file__).resolve().parent.parent
+    mig = (root / "supabase/migrations/476_ah_quarter_lines_and_ah_bot.sql").read_text()
+    assert mig.count("s.settle_fraction") >= 4 and "'bot_ah_sharp_v1'" in mig and "'experimental'" in mig
+    assert '"settle_fraction = %s "' in inspect.getsource(__import__("workers.jobs.settlement", fromlist=["x"]))
+
+    # the decision, on synthetic quotes: Pinnacle 1.90/1.90 on home -0.5 = fair 2.00; Bet365 home 2.10 (EV +5%)
+    ko, now = 1_900_000_000.0, 1_900_000_000.0 - 6 * 3600
+    t = now - 600
+
+    def line(quotes):
+        return {"ko": ko, "quotes": quotes}
+    L = {("m1", "asian_handicap:-0.5"): line({"Pinnacle": {"home": (1.90, t), "away": (1.90, t)},
+                                              "Bet365": {"home": (2.10, t), "away": (1.72, t)}})}
+    picks = ah.evaluate(L, now)
+    assert len(picks) == 1 and picks[0]["bookmaker"] == "Bet365" and ah.selection_of(picks[0]) == "home -0.5"
+    stale = {k: line({**v["quotes"], "Bet365": {"home": (2.10, t - 1800), "away": (1.72, t - 1800)}}) for k, v in L.items()}
+    assert ah.evaluate(stale, now) == [], "a book quote from another fetch is not paired with Pinnacle"
+    big = {k: line({**v["quotes"], "Bet365": {"home": (2.30, t), "away": (1.60, t)}}) for k, v in L.items()}
+    assert ah.evaluate(big, now) == [], "EV >= 15% is a likely wrong quote (2.30 vs fair 2.00 = exactly 15%)"
+    direct = {k: line({"Pinnacle": v["quotes"]["Pinnacle"], "Epicbet": {"home": (2.10, t), "away": (1.72, t)}}) for k, v in L.items()}
+    assert ah.evaluate(direct, now) == [], "direct-feed books are outside the evidence"
+    # ladder: Bet365's own -0.75 price for home must be >= its -0.5 price; 2.05 < 2.10 contradicts it
+    bad_ladder = dict(L)
+    bad_ladder[("m1", "asian_handicap:-0.75")] = line({"Bet365": {"home": (2.05, t), "away": (1.80, t)}})
+    ok_ladder = dict(L)
+    ok_ladder[("m1", "asian_handicap:-0.75")] = line({"Bet365": {"home": (2.40, t), "away": (1.58, t)}})
+    assert len(ah.evaluate(ok_ladder, now)) == 1, "a consistent ladder passes"
+    assert ah.evaluate(bad_ladder, now) == [], "a price its own book's ladder contradicts is refused"
+    assert not set(ah.AF_BOOKS) & {"Coolbet", "Epicbet", "Tonybet", "Unibet-Site", "Optibet"}
+    assert (ah.EV_MIN, ah.EV_CAP) == (0.03, 0.15)
+    src = (root / "workers/scheduler.py").read_text()
+    assert 'id="ah_sharp_outlier"' in src and "job_ah_sharp_outlier" in src
 
 
 @test("STATUS-WORDS-FROM-STATUS-FIELD — a pick's status word is read from bots, never typed (#162 W5.6)")

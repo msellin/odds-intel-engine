@@ -98,7 +98,32 @@ def market_sides(market: str) -> tuple[str, ...] | None:
         return None if m == "double_chance" else MARKET_SIDES[m]   # DC legs overlap: not a de-viggable set
     if m.startswith(("over_under", "team_total", "corners_ou")):
         return ("over", "under")
+    if m.startswith(AH_LINE_PREFIX):
+        # [[#187]] one Asian-handicap RUNG = a 2-way market; the line is in the key (ah_line_market),
+        # sides are the stored selections, both priced at the same home-perspective line
+        return ("home", "away")
     return None
+
+
+AH_LINE_PREFIX = "asian_handicap:"
+
+
+def ah_line_market(home_line) -> str:
+    """[[#187]] The key for ONE Asian-handicap rung, e.g. 'asian_handicap:-0.75'. The same text the SQL
+    loaders build ('asian_handicap:' || handicap_line::float8::text), so Python and SQL keys match:
+    0 -> '0', 0.5 -> '0.5', -1 -> '-1'."""
+    x = float(home_line) + 0.0                  # -0.0 -> 0.0
+    return f"{AH_LINE_PREFIX}{x:g}"
+
+
+def ah_split_selection(selection: str) -> tuple[str, float] | None:
+    """'home -0.75' -> ('home', -0.75): the side + the HOME-perspective line, as simulated_bets and
+    _r_asian_handicap store it."""
+    side, _, line = (selection or "").strip().lower().partition(" ")
+    try:
+        return side, float(line) + 0.0
+    except ValueError:
+        return None
 
 
 @dataclass

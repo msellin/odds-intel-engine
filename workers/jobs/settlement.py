@@ -378,8 +378,27 @@ def _r_double_chance(market, selection, home_goals, away_goals, stats):
     return False
 
 
+class _HalfResult:
+    """[[#187]] A quarter-line Asian handicap bet that is HALF settled: half the stake on each neighbouring
+    line, one of which pushes. `won=True` = half win (half the stake wins, half is returned), False = half
+    loss. settle_bet_result turns it into result 'won'/'lost' with settle_fraction 0.5 and half the P&L."""
+    __slots__ = ("won",)
+
+    def __init__(self, won: bool):
+        self.won = won
+
+
+def _ah_one_line(sel_team: str, hl: float, margin: int):
+    """True / False / None (push) for a whole or half line; `hl` is the HOME-perspective line."""
+    x = margin + hl if sel_team == "home" else -(margin + hl)
+    if abs(x) < 1e-9:
+        return None  # push → void (stake returned)
+    return x > 0
+
+
 def _r_asian_handicap(market, selection, home_goals, away_goals, stats):
-    # selection = "home -1.25" or "away +0.5" (team + handicap in one string)
+    # selection = "home -1.25" or "away +0.5": the SIDE + the HOME-perspective line (the same line
+    # odds_snapshots.handicap_line stores on both rows; "away -1" = the away side of home -1, i.e. away +1).
     parts = selection.split(" ", 1)
     if len(parts) != 2:
         return False
@@ -388,28 +407,19 @@ def _r_asian_handicap(market, selection, home_goals, away_goals, stats):
         hl = float(hl_str)
     except ValueError:
         return False
-    spread = -hl  # goals home must win by; negative spread = home receives goals
     margin = home_goals - away_goals
-    floor_s = math.floor(spread)
-    frac = spread - floor_s  # [0, 1)
-    if frac < 0.01:  # whole line — push at margin == spread
-        spread_int = round(spread)
-        if sel_team == "home":
-            if margin > spread_int:
-                return True
-            if margin == spread_int:
-                return None  # push → void (stake returned)
-            return False
-        else:  # away
-            if margin < spread_int:
-                return True
-            if margin == spread_int:
-                return None  # push → void
-            return False
-    # Half or quarter line — strict comparison, no push
-    if sel_team == "home":
-        return margin > spread
-    return margin < spread
+    frac = round(abs(hl) % 1, 2)
+    if frac in (0.25, 0.75):
+        # [[#187]] QUARTER line = half the stake on hl-0.25 and half on hl+0.25. It used to be graded as a
+        # full win/loss by a strict comparison, so a home -0.25 draw lost the whole stake (correct: half) and
+        # a home -0.75 one-goal win paid in full (correct: half win, half returned).
+        a, b = _ah_one_line(sel_team, hl - 0.25, margin), _ah_one_line(sel_team, hl + 0.25, margin)
+        if a == b:
+            return a                       # both halves agree: full win / full loss
+        if None in (a, b):
+            return _HalfResult((a if a is not None else b) is True)
+        return None                        # one half wins, one loses at equal odds: impossible for ±0.25
+    return _ah_one_line(sel_team, hl, margin)
 
 
 def _r_draw_no_bet(market, selection, home_goals, away_goals, stats):
@@ -637,10 +647,16 @@ def settle_bet_result(bet: dict, home_goals: int, away_goals: int,
     if won is _UNSETTLEABLE:
         return dict(_SKIP_RESULT)  # known family but not gradeable here (no stats)
 
+    settle_fraction = 1.0
+    if isinstance(won, _HalfResult):
+        # [[#187]] quarter-line AH half result: the result word stays won/lost (every counter keeps
+        # working); settle_fraction = 0.5 halves the P&L here AND in bot_ledger (migration 476).
+        settle_fraction = 0.5
+        won = won.won
     if won is None:
         pnl = 0.0  # push — stake returned
     else:
-        pnl = round((pnl_odds - 1) * stake if won else -stake, 2)
+        pnl = round(((pnl_odds - 1) * stake if won else -stake) * settle_fraction, 2)
 
     # CLV: positive = we got better odds than closing line.
     #
@@ -659,12 +675,15 @@ def settle_bet_result(bet: dict, home_goals: int, away_goals: int,
         if _px_live:
             clv_live = round((float(_px_live) / float(closing_odds)) - 1, 4)
 
-    return {
+    out = {
         "result": "void" if won is None else ("won" if won else "lost"),
         "pnl": pnl,
         "clv": clv,
         "clv_live": clv_live,
     }
+    if settle_fraction != 1.0:
+        out["settle_fraction"] = settle_fraction   # [[#187]] only on a quarter-line half result
+    return out
 
 
 def settle_combo_bet(combo_bet: dict, match_scores: dict) -> dict | None:
@@ -4026,12 +4045,15 @@ def _settle_pending_bets(pending: list, finished: list):
             "closing_bookmaker = %s, "
             # FLAT-STAKES-EVERYWHERE (#155, migration 441): which price the pnl was computed
             # at — 'recorded' = no quote stored at pick time (flagged, as on the view).
-            "pnl_price_basis = %s "
+            "pnl_price_basis = %s, "
+            # [[#187]] 0.5 on a quarter-line AH half win / half loss (bot_ledger multiplies by it)
+            "settle_fraction = %s "
             "WHERE id = %s",
             [settlement["result"], settlement["pnl"], new_bankroll,
              closing_odds, settlement["clv"], clv_pinnacle, clv_pinnacle_live,
              clv_pinnacle, closing_bookmaker,
-             None if is_combo else public_price(bet)[1], bet["id"]]
+             None if is_combo else public_price(bet)[1],
+             settlement.get("settle_fraction", 1.0), bet["id"]]
         )
 
         settled += 1

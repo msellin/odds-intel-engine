@@ -52,8 +52,11 @@ def _edge_unit(name: str) -> str:
     code that runs the bot, so the label cannot drift from the gate."""
     from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG
     from workers.jobs.ou_sharp_outlier import BOTS as OU_SHARP_OUTLIER_BOTS
+    from workers.jobs.ah_sharp_outlier import BOT as AH_SHARP_BOT, _rule as _ah_rule   # [[#187]]
     if (BOTS_CONFIG.get(name) or {}).get("edge_unit") == "ev" or name in OU_SHARP_OUTLIER_BOTS:
         return "ev"
+    if name == AH_SHARP_BOT:
+        return _ah_rule().edge_unit            # 'ev' — read from the rule the job runs
     return "pp"
 
 

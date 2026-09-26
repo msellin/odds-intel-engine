@@ -1192,6 +1192,14 @@ def job_combined_1x2_refresh():
     _run_job("combined_1x2_refresh_manual", _run)
 
 
+def job_ah_sharp_outlier():
+    """AH SHARP-OUTLIER ([[#187]]) — every 30 min, an API-Football book's Asian-handicap price beating
+    Pinnacle's fair price on the same line (EV 3-15%, every line type), one pick per match:
+    bot_ah_sharp_v1. Paper, simulated_bets, EXPERIMENTAL."""
+    from workers.jobs.ah_sharp_outlier import run as _ah_run
+    _run_job("ah_sharp_outlier", lambda: _ah_run())
+
+
 def job_ou_sharp_outlier():
     """O/U SHARP-OUTLIER ([[#149]]) — every 30 min, soft books beating Pinnacle's fair O/U price
     (EV 5-15%) on lines 1.5/2.5/3.5: bot_ou_sharp_early_v1 (quote >= 12 h before kickoff) and
@@ -3621,6 +3629,11 @@ def main():
     # O/U SHARP-OUTLIER ([[#149]]) — :14/:44, after the :00/:30 odds refresh and the :05/:35 betting refresh.
     scheduler.add_job(job_ou_sharp_outlier, CronTrigger(minute="14,44"),
                       id="ou_sharp_outlier", name="O/U sharp-outlier bots :14/:44",
+                      max_instances=1, misfire_grace_time=600)
+
+    # AH SHARP-OUTLIER ([[#187]]) — :18/:48, after the :00/:30 odds refresh (every AH book arrives in it).
+    scheduler.add_job(job_ah_sharp_outlier, CronTrigger(minute="18,48"),
+                      id="ah_sharp_outlier", name="AH sharp-outlier bot :18/:48",
                       max_instances=1, misfire_grace_time=600)
 
     # META-RETRAIN (2026-05-25) — weekly B-ML3 meta-model retrain Sunday 04:00 UTC,

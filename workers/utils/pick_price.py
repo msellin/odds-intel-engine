@@ -52,8 +52,13 @@ _LEGS = """
              WHEN LOWER(t.market) IN ('o/u', 'ou')
                OR LOWER(t.market) LIKE 'over_under%%'
                THEN LOWER(REGEXP_REPLACE(t.selection, '[[:space:]]*[0-9.]+[[:space:]]*$', ''))
+             -- [[#187]] AH: 'home -0.75' = the side + the HOME-perspective line
+             WHEN LOWER(t.market) = 'asian_handicap' THEN LOWER(SPLIT_PART(TRIM(t.selection), ' ', 1))
              ELSE LOWER(t.selection)
-           END AS selection
+           END AS selection,
+           CASE WHEN LOWER(t.market) = 'asian_handicap'
+                 AND SPLIT_PART(TRIM(t.selection), ' ', 2) ~ '^[+-]?[0-9]+([.][0-9]+)?$'
+                THEN SPLIT_PART(TRIM(t.selection), ' ', 2)::numeric END AS ah_line
       FROM {table} t
      WHERE t.pick_time IS NOT NULL
        AND t.{column} IS NULL
@@ -80,6 +85,9 @@ q AS (
         ON  o.match_id  = b.match_id
        AND  LOWER(o.market)    = b.market
        AND  LOWER(o.selection) = b.selection
+       -- [[#187]] an AH leg is priced on ITS rung only (without this any rung matched — worse than NULL);
+       -- an AH leg whose line cannot be parsed matches nothing
+       AND  (b.market <> 'asian_handicap' OR o.handicap_line = b.ah_line)
        AND  o.is_closing = false
        AND  o.is_live IS NOT TRUE
        AND  o.odds > 1

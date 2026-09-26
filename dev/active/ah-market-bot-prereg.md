@@ -55,3 +55,41 @@ later change is an AMENDMENT section with a date and a reason; nothing above it 
   whole lines at equal prices, so a quarter/whole preference would not surprise.
 * Most likely failure: the edge is Pinnacle's own noise — the independent close agrees with the soft book, so
   primary CLV ≈ 0.
+
+## AMENDMENT 1 — 2026-09-26, after a VOID first discovery run (holdout still unseen)
+
+**What happened.** The first discovery run (07-01 → 08-31) produced 364 picks but only **18** with an
+independent close, and one book (Betano) supplied 223 of them. Its numbers are declared **void** and are not
+used for any decision; they are recorded here only so the amendment's cause is on file. The holdout
+(09-01 → 09-25) has NOT been run.
+
+**Cause 1 — the ≥ 5-book independent close is structurally impossible for AH.** Our feed carries ~6–9
+publishable books on a given AH line (1xBet, Bet365, Marathonbet, Betano, BetVictor, SBO, 10Bet, Superbet +
+direct books); after excluding Pinnacle and the pick's own book, the discovery picks had 0/1/2/3/4/5/6 other
+closing books on 78/15/47/98/108/17/1 legs. **Change:** the independent close needs **≥ 3** other books
+(Pinnacle and the pick's own book still excluded). Coverage is reported.
+
+**Cause 2 — lone outliers.** At the close every book has 7–25% of its AH quotes > 10% (log) away from
+Pinnacle on the same line and side (per-book table in the context doc), so a single book far from everyone is
+more often an error or a stale quote than value. **Change:** a pick-time **CONFIRMATION** variant is added:
+at the decision instant, at least one OTHER non-Pinnacle book quotes the same side and line at EV ≥ 0
+against the same Pinnacle fair price. Both variants are reported; the Holm family doubles (18 cells × 2
+variants + 2 pooled rules).
+
+**Unchanged:** everything else above, including the holdout's one-run rule and the pass criteria.
+
+## AMENDMENT 2 — 2026-09-26, after the amended discovery run (holdout still unseen)
+
+**What the discovery run showed.** Pooled "any" +5.3% independent-close CLV (n 224) but 223 of 364 picks at
+one book, Betano. A same-fetch ladder check (last 6 days, home side, quarter line L between the same book's
+L−0.25 and L+0.25 in the SAME fetch) found Betano's quarter ladder non-monotonic on **9.4%** of 11,616
+triples vs 1.8% Bet365, 2.4% Pinnacle, 2.7% Marathonbet, 4.0% BetVictor, 4.1% 1xBet — i.e. a share of
+Betano's quarter prices are feed errors, and "value" concentrates exactly there.
+
+**Change — a LADDER-CONSISTENCY guard for every book (pick-time data only):** at the decision instant the
+pick book's price on (side, line L) must lie between its own prices on L − 0.25 and L + 0.25 (same side, runs
+live at that instant) wherever those neighbours exist; a candidate whose own ladder contradicts it is
+dropped. No book is banned by name. Share of picks with no neighbour to check is reported.
+
+Because this guard was designed after seeing discovery results, the discovery cells are **re-run with it and
+re-tested with Holm**; only cells passing that re-run are carried to the holdout, which is still run ONCE.

@@ -1,0 +1,42 @@
+# #187 — Asian handicap bot (migration 476, job ah_sharp_outlier :18/:48).
+task: "#187"
+checks:
+  - name: migration_476_applied
+    mode: eventually
+    sql: SELECT count(*) FROM _schema_migrations WHERE filename LIKE '476_ah_quarter_lines_and_ah_bot%'
+    expect: "== 1"
+    expires: "2026-09-27T12:00:00Z"
+  - name: ah_bot_registered_experimental
+    mode: eventually
+    sql: SELECT count(*) FROM bots WHERE name = 'bot_ah_sharp_v1' AND maturity_label = 'experimental' AND retired_at IS NULL
+    expect: "== 1"
+    expires: "2026-09-27T12:00:00Z"
+  - name: ah_bot_first_picks
+    mode: eventually
+    sql: |
+      SELECT count(*) FROM simulated_bets s JOIN bots b ON b.id = s.bot_id
+       WHERE b.name = 'bot_ah_sharp_v1' AND s.market = 'asian_handicap' AND s.selection ~ '^(home|away) [+-]?[0-9]'
+    expect: ">= 5"
+    expires: "2026-09-28T12:00:00Z"
+  - name: ah_bot_one_pick_per_match
+    mode: invariant
+    sql: |
+      SELECT count(*) FROM (SELECT s.match_id FROM simulated_bets s JOIN bots b ON b.id = s.bot_id
+       WHERE b.name = 'bot_ah_sharp_v1' GROUP BY 1 HAVING count(*) > 1) x
+    expect: "== 0"
+    expires: "2026-10-26T00:00:00Z"
+  - name: ah_public_price_never_above_pick
+    mode: invariant
+    sql: |
+      SELECT count(*) FROM simulated_bets s JOIN bots b ON b.id = s.bot_id
+       WHERE b.name = 'bot_ah_sharp_v1' AND s.odds_at_pick_available > s.odds_at_pick + 0.0001
+    expect: "== 0"
+    expires: "2026-10-26T00:00:00Z"
+  - name: quarter_lines_half_settled
+    mode: invariant
+    sql: |
+      SELECT count(*) FROM simulated_bets s JOIN bots b ON b.id = s.bot_id
+       WHERE b.name = 'bot_ah_sharp_v1' AND s.result IN ('won','lost') AND s.settle_fraction = 0.5
+         AND abs(s.pnl) > 5.0001 AND s.result = 'lost'
+    expect: "== 0"
+    expires: "2026-10-26T00:00:00Z"

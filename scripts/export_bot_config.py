@@ -412,6 +412,23 @@ def _paper_module_rows() -> dict[str, dict]:
         description="O/U TWO-ANCHOR (#149): as O/U EARLY without the 12 h rule; also beats the other books' consensus by >= 2% EV.",
         gates=[gate("ev_vs_pinnacle", f"{ou.EV_MIN:g}..{ou.EV_CAP:g}", src(fo, r"^EV_MIN, EV_CAP")),
                gate("ev_vs_consensus", ou.CONS_EV_MIN, src(fo, r"^CONS_EV_MIN"))], **common)
+    # #187 Asian-handicap sharp-outlier bot (workers/jobs/ah_sharp_outlier.py) — simulated_bets, paper.
+    from workers.jobs import ah_sharp_outlier as ah
+    fa = "workers/jobs/ah_sharp_outlier.py"
+    out[ah.BOT] = _row(ah.BOT, "sharp_generator",
+        description="Asian handicap — sharp line (#187): an API-Football book's AH price beats Pinnacle's fair price on the same line, same fetch, by EV 3-15%; every line type; one pick per match.",
+        ledger="simulated_bets", writer_job="ah_sharp_outlier", cadence=":18/:48",
+        markets=["asian_handicap (every line: whole / half / quarter)"],
+        prob_source="power-de-vigged Pinnacle, same line, newest fetch (<= 60 min old)",
+        edge_floor=f"EV {ah.EV_MIN:g}..{ah.EV_CAP:g}", edge_floor_source=src(fa, r"^EV_MIN, EV_CAP"),
+        odds_min=None, odds_max=None, books=list(ah.AF_BOOKS), books_source=src(fa, r"^AF_BOOKS"),
+        anchor="sharp",
+        gates=[gate("ev_vs_pinnacle", f"{ah.EV_MIN:g}..{ah.EV_CAP:g}", src(fa, r"^EV_MIN, EV_CAP")),
+               gate("same_fetch_min", ah.SAME_FETCH_MIN, src(fa, r"^SAME_FETCH_MIN")),
+               gate("anchor_fresh_min", ah.FRESH_MIN, src(fa, r"^FRESH_MIN")),
+               gate("lead_hours", ah.LEAD_H, src(fa, r"^LEAD_H")),
+               gate("ladder_guard", "own neighbouring lines consistent", src(fa, r"^def ladder_ok")),
+               gate("one_pick_per_match", True, src(fa, r"one pick per match, ever"))])
     return out
 
 

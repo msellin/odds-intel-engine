@@ -21,9 +21,10 @@ THE PRICE a leg is judged at:
 
 MARKETS. 1x2, 1x2_1h, over_under_*, team_total_*, corners_* directly;
 double_chance and draw_no_bet DERIVED exactly from the 1x2 close (DC = union of
-1x2 outcomes; DNB = P(side | not draw)). Asian handicap and BTTS are recorded as
-'unsupported_market' (AH needs the line threaded through; Pinnacle quotes no
-BTTS through our feed).
+1x2 outcomes; DNB = P(side | not draw)). Asian handicap since [[#187]] (2026-09-26): each leg is
+judged on ITS rung — the 2-way market 'asian_handicap:<home line>' (Pinnacle's close on that rung,
+and the consensus of the other books on it). BTTS is 'unsupported_market' for the Pinnacle half
+(Pinnacle quotes no BTTS through our feed).
 
 CONSENSUS CLOSE ([[#113]], migration 393). Beside the Pinnacle close, every leg is
 also judged against a >=5-book consensus close (workers/utils/anchor.py; Pinnacle
@@ -67,7 +68,27 @@ def sides_for(market: str) -> tuple[str, ...] | None:
         return ("home", "draw", "away")
     if m.startswith(("over_under", "team_total", "corners_")):
         return ("over", "under")
+    if m.startswith("asian_handicap:"):
+        return ("home", "away")          # [[#187]] one AH rung (see _ah_leg)
     return None
+
+
+def _ah_leg(l: dict) -> dict:
+    """[[#187]] An AH leg ('asian_handicap', 'home -0.75') is judged as the 2-way market of ITS rung:
+    market 'asian_handicap:-0.75', selection 'home' — the key the snapshot query below builds from
+    handicap_line. The stored row keeps the leg's own market/selection. Other legs pass through."""
+    if (l.get("market") or "").lower() != "asian_handicap":
+        return l
+    from workers.utils.anchor import ah_line_market, ah_split_selection
+    sp = ah_split_selection(l.get("selection"))
+    if sp is None:
+        return l
+    return dict(l, orig_market=l["market"], orig_selection=l["selection"],
+                market=ah_line_market(sp[1]), selection=sp[0])
+
+
+def _sql_market(market: str) -> str:
+    return "asian_handicap" if market.startswith("asian_handicap:") else market
 
 
 def base_market(market: str) -> str:
@@ -178,7 +199,7 @@ def run(limit: int | None = None, cons_days: int = 7) -> dict:
     for ledger, sql in _LEGS_SQL.items():
         rows = execute_query(sql + (f" LIMIT {int(limit)}" if limit else ""),
                              {"cons_days": int(cons_days)})
-        legs += [dict(r, ledger=ledger) for r in rows]
+        legs += [_ah_leg(dict(r, ledger=ledger)) for r in rows]
     by_match = defaultdict(list)
     for l in legs:
         by_match[l["match_id"]].append(l)
@@ -187,13 +208,17 @@ def run(limit: int | None = None, cons_days: int = 7) -> dict:
         chunk = mids[i:i + BATCH_MATCHES]
         markets = sorted({base_market(l["market"]) for m in chunk for l in by_match[m]})
         snaps = execute_query("""
-            SELECT o.match_id::text mid, o.market, lower(o.selection) selection, o.bookmaker bk,
+            SELECT o.match_id::text mid,
+                   -- [[#187]] an AH row is keyed by its rung (anchor.ah_line_market builds the same text)
+                   CASE WHEN o.market = 'asian_handicap' AND o.handicap_line IS NOT NULL
+                        THEN 'asian_handicap:' || (o.handicap_line::float8)::text ELSE o.market END AS market,
+                   lower(o.selection) selection, o.bookmaker bk,
                    o.timestamp ts, o.odds::float od
               FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
              WHERE o.match_id = ANY(%s::uuid[]) AND o.market = ANY(%s)
                AND o.is_live IS NOT TRUE AND o.odds > 1.01
                AND o.timestamp <= m.date AND o.timestamp >= m.date - make_interval(mins => %s)
-             ORDER BY o.timestamp""", (chunk, markets, FRESH_MIN))
+             ORDER BY o.timestamp""", (chunk, sorted({_sql_market(x) for x in markets}), FRESH_MIN))
         q = defaultdict(lambda: defaultdict(list))
         allbooks = defaultdict(list)          # (mid, market) -> rows of every book, for the consensus
         for s in snaps:
@@ -207,7 +232,8 @@ def run(limit: int | None = None, cons_days: int = 7) -> dict:
         for mid in chunk:
             for l in by_match[mid]:
                 sides = sides_for(l["market"])
-                row = [l["ledger"], l["leg_id"], mid, l["market"], l["selection"], l["odds"],
+                row = [l["ledger"], l["leg_id"], mid, l.get("orig_market", l["market"]),
+                       l.get("orig_selection", l["selection"]), l["odds"],
                        l["basis"], None, None, None, None, None, None, None, None, None,
                        None, None, None, None]     # 16-19: thin consensus (#116)
                 # #113 — the SAME measure against a >=5-book consensus close (Pinnacle and
