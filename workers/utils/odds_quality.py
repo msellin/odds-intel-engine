@@ -18,6 +18,26 @@ BLACKLISTED_OU_SOURCES: frozenset[str] = frozenset({
     "William Hill",
 })
 
+# ── THE ONE BOOKMAKER DENY-LIST (#162 audit A-R12, 2026-09-26) ─────────────────
+# Feeds that quote prices the book does not honour, plus synthetic aggregates and
+# CSV imports — never a legality call (that is ACCESSIBLE_BOOKMAKERS, the OWN
+# allow-list). Measured against the books' own sites:
+#   Unibet-Kambi  38% of stored quotes read higher than unibet.ee offered
+#   Unibet (AF)   33.1% phantom-high, and the feed died 2026-09-12
+#   Max / Avg     synthetic consensus columns, not a book
+#   Betfair Exchange / BetWin / Betfred   football-data.co.uk CSV imports
+# Before this, the same seven names were typed out separately in
+# daily_pipeline_v2._NON_OFFERS, anchor.NEVER_IN_ANCHOR and
+# publish_picks_forward_test.EXCLUDED_BOOKS. Each consumer now DERIVES its set
+# from here; each set's contents are unchanged (smoke ONE-BOOK-DENY-LIST).
+NON_OFFER_FEEDS: frozenset[str] = frozenset({
+    "Unibet-Kambi", "Unibet", "Max", "Avg",
+    "Betfair Exchange", "BetWin", "Betfred",
+})
+# The 👥 PICKS price-basis deny-list (daily_pipeline_v2.is_publishable_book /
+# _NON_OFFERS, pick_price): the non-offers plus AF's synthetic sources.
+NON_OFFER_BOOKS: frozenset[str] = NON_OFFER_FEEDS | {"api-football", "api-football-live"}
+
 # Implied-sum floor for a valid OU (over, under) pair.
 # Any market has overround ≥ 2% in practice — 1.02 catches every broken feed
 # (avg sum on api-football OU 1.5 is 0.63) without ever rejecting a real one.

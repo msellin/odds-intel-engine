@@ -13028,6 +13028,188 @@ def test_shadow_self_settlers_gone():
     assert "UPDATE shadow_bets" in vs and "interval '1 day'" in vs and "simulated_bets" not in vs
 
 
+@test("WEEKLY-REVIEW-ON-REVIEW-FLAG — the Sunday email's REVIEW is the bot_review_flag row /admin/bots shows (#162 W6.5)")
+def test_weekly_review_on_review_flag():
+    """#162 W6.5 (2026-09-26). scripts/weekly_bot_review.py emitted DEMOTE on its OWN rules —
+    a t <= -1.65 test on its own COALESCE of four CLV definitions, plus a real-money ROI
+    tripwire — while /admin/bots and the Overview inbox read the view bot_review_flag
+    (migration 437: >= 50 legs with a sharp-anchor CLV, upper 95% CI < 0). Two rules for one
+    question meant the email and the page could disagree about the same bot on the same day.
+    Now REVIEW is READ from the view, at any maturity; the own rules are gone; PROMOTE keeps
+    its t-test. Behavioural: the real _verdict is called with synthetic view rows."""
+    import importlib.util
+    src = _engine_path("scripts/weekly_bot_review.py").read_text()
+    code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+    assert "FROM bot_review_flag" in code and "def _fetch_review_flags" in code
+    assert "flag=review_flags.get(name)" in code, "main() must hand each bot its view row"
+    for gone in ("RETIRE_T", "DEMOTE_REAL_ROI_PCT", "MIN_BETS_FOR_VERDICT", "gate_t <="):
+        assert gone not in code, f"{gone}: the job's own DEMOTE rule is back beside the view"
+    assert '"DEMOTE"' not in code, "the verdict is REVIEW (a flag, never automatic), not DEMOTE"
+
+    spec = importlib.util.spec_from_file_location("wbr_w65", _engine_path("scripts/weekly_bot_review.py"))
+    wbr = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(wbr)
+    flagged = (True, "clv_ci_below_zero", 120, -0.045, -0.02, 50)
+    clean = (False, "clv_ci_not_below_zero", 300, 0.02, 0.04, 50)
+    # Status labels are deliberately NOT enumerated here (they are being merged; read them
+    # through bot_distribution). REVIEW must not depend on the label at all, so any string works.
+    for maturity in ("experimental", "testing", "some_future_label", None):
+        v, why = wbr._verdict(maturity, 0.3, "clv", 150, 30, flag=flagged, ledger="shadow")
+        assert v == "REVIEW" and "bot_review_flag" in why, (maturity, v, why)
+    # A very negative own t-stat no longer demotes anything: only the view flags.
+    v, why = wbr._verdict("testing", -5.0, "clv", 300, 30, flag=clean, ledger="shadow")
+    assert v == "HOLD" and "clv_ci_not_below_zero" in why, (v, why)
+    v, _ = wbr._verdict("testing", 2.5, "clv", 300, 30, flag=clean, ledger="shadow")
+    assert v == "PROMOTE"
+    v, why = wbr._verdict("testing", None, "roi", 10, 3, flag=None)
+    assert v == "HOLD" and "no row" in why
+    wf = _engine_path("WORKFLOWS.md").read_text()
+    assert "PROMOTE/REVIEW/HOLD" in wf and "bot_review_flag" in wf
+    return "REVIEW read from bot_review_flag at every maturity; own DEMOTE rules gone"
+
+
+@test("DEAD-CODE-REMAINDER-GONE — #162 W7.3 + audit C §7 dead code, dead RLS policies and stale comments stay gone")
+def test_dead_code_remainder_gone():
+    """#162 (2026-09-26). Each item was verified unread before deletion:
+    * daily_pipeline_v2: the per-run footer-CLV read (`_clv_for_footer = get_elite_30d_clv()`) —
+      nothing appended the footer since the operator alerts went off (2026-09-11).
+    * settlement: `_build_upcoming_model_summary` (unreferenced since 2026-09-07).
+      (`compute_model_evaluations` is NOT dead code — settlement calls it nightly — and is kept.)
+    * workers/jobs/weekly_digest.py + the unregistered scheduler `job_weekly_digest`.
+    * web: fetchUpcomingPicks, dropVipUnsettled, getModelV2Stats (+ its /performance call), botRecentRoi.
+    * migration 460: bots' duplicate "Public read" (public_read kept — identical USING (true)), and
+      shadow_bets_anon_read (anon holds no grant on shadow_bets since 404).
+    * comments in workers/ that described the deleted Mac daemon / place_all_bets / InplayBot as live."""
+    import re as _re
+
+    def _code(text: str) -> str:
+        text = _re.sub(r'"""[\s\S]*?"""', "", text)
+        return "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
+
+    dp = _code(_engine_path("workers/jobs/daily_pipeline_v2.py").read_text())
+    assert "_clv_for_footer" not in dp and "get_elite_30d_clv" not in dp
+    st = _engine_path("workers/jobs/settlement.py").read_text()
+    assert "def _build_upcoming_model_summary" not in st
+    assert not _engine_path("workers/jobs/weekly_digest.py").exists()
+    assert "job_weekly_digest" not in _engine_path("workers/scheduler.py").read_text()
+
+    m = _engine_path("supabase/migrations/460_drop_dead_rls_policies.sql").read_text()
+    assert "SET lock_timeout" in m
+    assert 'DROP POLICY IF EXISTS "Public read" ON public.bots;' in m
+    assert "DROP POLICY IF EXISTS shadow_bets_anon_read ON public.shadow_bets;" in m
+    assert "public_read" in m and 'DROP POLICY IF EXISTS "public_read"' not in m, (
+        "exactly ONE equivalent bots read policy must survive — anon reads bots (404 grant list)")
+
+    stale = {
+        "workers/automation/coolbet_browser_sync.py": ("Designed for the Mac daemon to call",
+                                                       "caller (Mac daemon) treats empty",
+                                                       "RUNTIME (called from Mac daemon):"),
+        "workers/automation/coolbet_explorer.py": ("Used by coolbet_placer.place_all_bets",),
+        "workers/api_clients/supabase_client.py": ("the paper daemon passes execute",),
+        "workers/api_clients/db.py": ("used by /health and InplayBot heartbeat.",),
+    }
+    for path, phrases in stale.items():
+        text = _engine_path(path).read_text()
+        for ph in phrases:
+            assert ph not in text, f"{path}: stale comment describes a deleted component as live: {ph!r}"
+
+    # Live: once 460 is applied, exactly one bots policy and none on shadow_bets.
+    try:
+        from workers.api_clients.db import execute_query
+        applied = bool(execute_query("SELECT 1 FROM _schema_migrations WHERE filename = %s",
+                                     ["460_drop_dead_rls_policies.sql"]))
+        pols = execute_query("SELECT tablename, policyname FROM pg_policies "
+                             "WHERE tablename IN ('bots','shadow_bets')")
+    except Exception:  # noqa: BLE001 — no DB here; the source pins above still ran
+        applied, pols = None, None
+    if applied:
+        names = sorted((p["tablename"], p["policyname"]) for p in pols)
+        assert names == [("bots", "public_read")], names
+
+    try:
+        _web_path("src/lib/engine-data.ts")
+    except SkipTest:
+        return "engine pins OK (web repo absent — web pins skipped)"
+    web = {
+        "src/lib/upcoming-picks.ts": ("fetchUpcomingPicks",),
+        "src/lib/bot-aggregates.ts": ("dropVipUnsettled",),
+        "src/lib/engine-data.ts": ("getModelV2Stats", "ModelV2Stats", "botRecentRoi"),
+        "src/app/(app)/performance/page.tsx": ("getModelV2Stats", "modelV2Stats"),
+        "src/components/performance-client.tsx": ("modelV2Stats",),
+        "src/components/performance-hero.tsx": ("modelV2Stats",),
+    }
+    for path, names in web.items():
+        text = _web_path(path).read_text()
+        text = _re.sub(r"/\*.*?\*/", "", text, flags=_re.S)
+        text = _re.sub(r"//.*", "", text)
+        for n in names:
+            assert n not in text, f"{path}: dead {n} is back"
+    return "engine + web dead code gone; 460 drops the two dead policies"
+
+
+@test("ONE-BOOK-DENY-LIST — the non-offer bookmaker set is defined once; every consumer's CONTENTS unchanged (#162 A-R12)")
+def test_one_book_deny_list():
+    """#162 audit A-R12 (2026-09-26). The same seven non-offer names (phantom feeds, synthetic
+    aggregates, CSV imports) were typed out in daily_pipeline_v2._NON_OFFERS,
+    anchor.NEVER_IN_ANCHOR and publish_picks_forward_test.EXCLUDED_BOOKS. Now
+    workers/utils/odds_quality.NON_OFFER_FEEDS is the one definition; _NON_OFFERS (= NON_OFFER_BOOKS,
+    + the api-football synthetics) and NEVER_IN_ANCHOR (+ Coolbet, Coolbet-OddsAPI) derive from it.
+    Nothing's CONTENTS changed — the exact sets are pinned so a later edit to the shared list is a
+    visible, deliberate change to three consumers, not a silent one.
+    Deliberately NOT merged:
+      * market_consensus_1x2.CONSENSUS_BOOKS is an ALLOW-list for a fitted model and keeps Unibet,
+        BetWin and Betfred (deny-listed here) for their history — merging would change a model input.
+      * publish_picks_forward_test.EXCLUDED_BOOKS stays a literal (pre-registered, frozen); parity only."""
+    from workers.utils.odds_quality import NON_OFFER_FEEDS, NON_OFFER_BOOKS
+    from workers.utils import anchor
+    from workers.jobs.daily_pipeline_v2 import _NON_OFFERS, is_publishable_book
+    feeds = {"Unibet-Kambi", "Unibet", "Max", "Avg", "Betfair Exchange", "BetWin", "Betfred"}
+    assert set(NON_OFFER_FEEDS) == feeds
+    assert set(NON_OFFER_BOOKS) == feeds | {"api-football", "api-football-live"}
+    assert _NON_OFFERS is NON_OFFER_BOOKS, "daily_pipeline_v2 must alias the one list, not re-type it"
+    assert set(anchor.NEVER_IN_ANCHOR) == feeds | {"Coolbet", "Coolbet-OddsAPI"}, (
+        "the anchor's member exclusions changed — that changes every sharp-anchor CLV")
+    assert not is_publishable_book("Unibet") and is_publishable_book("Bet365")
+    asrc = _engine_path("workers/utils/anchor.py").read_text()
+    assert "NEVER_IN_ANCHOR = NON_OFFER_FEEDS |" in asrc and '"Betfred"' not in asrc
+    dsrc = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text()
+    assert "_NON_OFFERS: frozenset = NON_OFFER_BOOKS" in dsrc and '"BetWin", "Betfred"' not in dsrc
+    pub = _engine_path("scripts/publish_picks_forward_test.py").read_text()
+    excl = pub[pub.index("EXCLUDED_BOOKS = ("): pub.index("MARKETS = {")]
+    import re as _re
+    assert set(_re.findall(r'"([^"]+)"', excl.split(")")[0])) == feeds, (
+        "the pre-registered forward test's exclusions drifted from the one deny-list")
+    from workers.model.market_consensus_1x2 import CONSENSUS_BOOKS
+    assert {"Unibet", "BetWin", "Betfred"} <= set(CONSENSUS_BOOKS), (
+        "CONSENSUS_BOOKS is a fitted model's input — changing it needs a refit twin (A-R12)")
+    return "one deny-list; anchor / PICKS / forward-test contents unchanged"
+
+
+@test("SHOW-ON-PICKS-DERIVED — no bot's show_on_picks / show_on_performance disagrees with its status (#155 trigger, mig 442)")
+def test_show_on_picks_derived():
+    """#162 audit B §5 said bots.show_on_picks was still TRUE on retired bots. Migration 442 (#155)
+    made both columns DERIVED by the trigger bots_zz_derive_distribution and re-derived every row.
+    Verified 2026-09-26: 0 of 119 bots disagree (91 retired, none with show_on_picks true), so no
+    fix migration was needed. This keeps it that way: any drift from the status fails here.
+    The status is read THROUGH bot_distribution (sent_public / on_performance), never by
+    enumerating labels here — the label set itself may change."""
+    try:
+        from workers.api_clients.db import execute_query
+        bad = execute_query("""
+            SELECT b.name FROM bots b JOIN bot_distribution d ON d.bot_name = b.name
+             WHERE b.show_on_picks IS DISTINCT FROM d.sent_public
+                OR b.show_on_performance IS DISTINCT FROM d.on_performance
+                OR (b.retired_at IS NOT NULL AND (b.show_on_picks OR b.show_on_performance))""")
+        trig = execute_query("""SELECT tgenabled FROM pg_trigger
+                                 WHERE tgrelid = 'public.bots'::regclass
+                                   AND tgname = 'bots_zz_derive_distribution'""")
+    except Exception as e:  # noqa: BLE001
+        raise SkipTest(f"DB not reachable: {e}")
+    assert trig and trig[0]["tgenabled"] == "O", "the #155 derive trigger is missing or disabled"
+    assert not bad, f"show_on_* drifted from the status: {[r['name'] for r in bad]}"
+    return "every bot's show_on_* equals its status"
+
+
 @test("LEAGUE-CLV-EFFICIENCY — per-league CLV index script + weekly cron wired")
 def test_league_clv_efficiency():
     """LEAGUE-CLV-EFFICIENCY (2026-05-25): per-league CLV beatability index
@@ -14826,7 +15008,9 @@ def test_public_performance_extras():
     assert "PublicPnlPoint" in ed and "CalibrationBucket" in ed and "Streaks" in ed, (
         "engine-data must export PublicPnlPoint + CalibrationBucket + Streaks"
     )
-    assert "botRecentRoi" in ed, "extras must compute per-bot 30-day ROI map"
+    # #162 W7.3 (2026-09-26): botRecentRoi was computed here and rendered nowhere
+    # (performance-extras reads calibration + streaks only) — deleted; pin it stays gone.
+    assert "botRecentRoi" not in ed, "extras computes a per-bot ROI map nothing renders"
 
     assert "getPublicPerformanceExtras" in page_src, "page must call getPublicPerformanceExtras"
     # Rendered, not merely imported — an unused import type-checks fine.
@@ -18505,12 +18689,16 @@ def _():
     # Static fallback present so the footer is never empty
     assert "CLV-tracked" in tg_src, "static fallback footer must exist"
 
-    # 2. Telegram broadcast call sites use clv_footer_line()
+    # 2. #162 W7.3 (2026-09-26): this pin used to require clv_footer_line( in
+    # daily_pipeline_v2.py — and was satisfied only by a COMMENT: the pick-alert
+    # loop stopped appending the footer when the operator alerts went off
+    # (OPERATOR-PICK-ALERTS-OFF, 2026-09-11), leaving an unused per-run
+    # dashboard_cache read (`_clv_for_footer`). That read is deleted; pin that
+    # it stays gone. inplay_bot.py (the live broadcast site) went in W7.2.
     dp = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
-    assert "clv_footer_line(" in dp, (
-        "daily_pipeline_v2.py user broadcast must append clv_footer_line()"
+    assert "_clv_for_footer" not in dp and "get_elite_30d_clv" not in dp, (
+        "daily_pipeline_v2.py must not re-fetch the footer CLV it never uses"
     )
-    # #162 W7.2 (2026-09-26): inplay_bot.py (the live broadcast site) is deleted.
 
     # 3. Email digests inject CLV strip under the logo (both templates)
     ed = pathlib.Path("workers/jobs/email_digest.py").read_text()
@@ -18910,7 +19098,8 @@ def test_bot_gate_reachable():
     src = _p.Path("scripts/weekly_bot_review.py").read_text()
 
     # --- Fix 1: a paper-evidence promotion path exists, gated on a t-test ---
-    for const in ("PROMOTE_T", "RETIRE_T", "CLV_MIN_N",
+    # #162 W6.5: RETIRE_T is gone — REVIEW is read from the view bot_review_flag.
+    for const in ("PROMOTE_T", "CLV_MIN_N",
                   "MIN_SETTLED_FOR_DECISION", "MIN_DAYS_FOR_DECISION"):
         assert const in src, (
             f"weekly_bot_review.py must expose {const} — the paper-evidence "
@@ -18928,8 +19117,8 @@ def test_bot_gate_reachable():
         "the gate must compute a t-statistic — a raw ROI/CLV threshold is "
         "cleared whenever noise lands above it, and raising n does not fix it"
     )
-    assert "gate_t >= PROMOTE_T" in src and "gate_t <= RETIRE_T" in src, (
-        "PROMOTE/DEMOTE must compare the t-statistic against PROMOTE_T/RETIRE_T"
+    assert "gate_t >= PROMOTE_T" in src, (
+        "PROMOTE must compare the t-statistic against PROMOTE_T"
     )
 
     # The paper path must not depend on real_bets. If a future edit puts a
@@ -18952,7 +19141,7 @@ def test_bot_gate_reachable():
     # once in src/lib/shadow-bots/verdict.ts — see SHADOW-BOTS-VERDICT-IS-PREREG.
     # weekly_bot_review.py keeps its own constants; they are the WEEKLY review's
     # gate, and the two are no longer claimed to be the same instrument.
-    for const, val in (("PROMOTE_T", "1.65"), ("RETIRE_T", "-1.65"),
+    for const, val in (("PROMOTE_T", "1.65"),
                        ("CLV_MIN_N", "100"),
                        ("MIN_SETTLED_FOR_DECISION", "200"),
                        ("MIN_DAYS_FOR_DECISION", "14")):
@@ -19010,18 +19199,19 @@ def test_bot_gate_reachable():
         "being silently ineligible for promotion forever"
     )
 
-    # --- DEMOTE must apply at any maturity, not calibrated-only ------------
+    # --- The retirement flag must apply at any maturity -------------------
     # A beta bot bleeding money is visible to every signed-in user on /picks,
-    # so it must be demotable. Before this task DEMOTE required
+    # so it must be flaggable. Before BOT-GATE-REACHABLE DEMOTE required
     # maturity == 'calibrated' and bot_summer_specialist sat at -56% ROI
-    # keeping its beta label indefinitely.
-    demote_line = "    if gate_t <= RETIRE_T:"
-    assert demote_line in src, "DEMOTE must be driven by the t-statistic"
-    demote_branch = src[src.index(demote_line):]
-    demote_branch = demote_branch[:demote_branch.index("if gate_t >= PROMOTE_T")]
-    assert "is_calibrated" not in demote_branch, (
-        "the t-gate DEMOTE branch must NOT be gated on maturity — a beta bot "
-        "bleeding paper money must be demotable"
+    # keeping its beta label indefinitely. #162 W6.5 replaced the t <= -1.65
+    # DEMOTE with REVIEW read from bot_review_flag; the invariant is unchanged.
+    flag_line = "    if flag is not None and flag[0]:"
+    assert flag_line in src, "REVIEW must be driven by the bot_review_flag row"
+    flag_branch = src[src.index(flag_line):]
+    flag_branch = flag_branch[:flag_branch.index("if gate_t >= PROMOTE_T")]
+    assert "if is_calibrated" not in flag_branch, (
+        "the REVIEW branch must NOT be gated on maturity — a beta bot "
+        "bleeding paper money must be flaggable"
     )
 
     # --- Promotion needs persistence, not just volume ----------------------
@@ -19067,11 +19257,10 @@ def test_bot_maturity_review_weekly():
     # Verdict thresholds — pinned by name so smoke catches accidental edits.
     # The numeric values themselves are starting points; pin the constant
     # names so a "10 → 5" tweak is visible, not the literal magnitudes.
+    # #162 W6.5: the real-money constants (MIN_BETS_FOR_VERDICT,
+    # PROMOTE_REAL_ROI_PCT, PROMOTE_SIM_CLV_PCT, DEMOTE_REAL_ROI_PCT) are gone
+    # with the ROI tripwire — REVIEW is read from the view bot_review_flag.
     for const in (
-        "MIN_BETS_FOR_VERDICT",
-        "PROMOTE_REAL_ROI_PCT",
-        "PROMOTE_SIM_CLV_PCT",
-        "DEMOTE_REAL_ROI_PCT",
         "VERDICT_WINDOW_DAYS",
     ):
         assert const in script_src, (
@@ -19081,7 +19270,8 @@ def test_bot_maturity_review_weekly():
 
     # Pin the verdict labels — the email digest and the operator's playbook
     # rely on these three strings being stable.
-    for verdict in ("PROMOTE", "DEMOTE", "HOLD"):
+    # DEMOTE became REVIEW in #162 W6.5 (a flag, never automatic — owner rule §3.3).
+    for verdict in ("PROMOTE", "REVIEW", "HOLD"):
         assert verdict in script_src, f"verdict label '{verdict}' must appear in script output"
 
     # Pin the maturity gate semantics. BOT-GATE-REACHABLE (2026-08-28)
@@ -29424,7 +29614,8 @@ def test_min_odds_formula():
     # 2. /picks must use the break-even derivation, not the multiplicative one.
     up = open(os.path.join(web, "lib", "upcoming-picks.ts"), encoding="utf-8").read()
     assert "export function breakEvenOdds(" in up, "breakEvenOdds helper missing"
-    assert "min_odds: breakEvenOdds(" in up, "picks must derive min_odds via breakEvenOdds"
+    # #162 W7.3 (2026-09-26): the model-era feed fetchUpcomingPicks (the only
+    # `min_odds: breakEvenOdds(` site) had no caller and was deleted; the formula pin stays.
     assert "odds_at_pick) / (1 + Number(r.edge_percent))" not in up, (
         "the multiplicative break-even formula is back in upcoming-picks"
     )
@@ -41307,13 +41498,10 @@ def test_vip_performance_settled_only():
     assert "isVip:" in ed[i:i + 2500], "BotRecord.isVip is not populated"
     assert '"getAllBotsFromDB_v2"' not in ed, "cache key not bumped — 30 min of rows would lack isVip"
 
-    # 2. settled-only filter exists and keeps only won/lost/void for VIP bots
-    assert "export function dropVipUnsettled" in agg, "dropVipUnsettled is gone"
-    j = agg.index("export function dropVipUnsettled")
-    body = agg[j:j + 600]
-    assert '"won"' in body and '"lost"' in body and '"pending"' not in body, (
-        "dropVipUnsettled must allowlist settled results, not denylist 'pending' — "
-        "any new unsettled state would otherwise leak the paid pick")
+    # 2. #162 W7.3 (2026-09-26): the settled-only filter `dropVipUnsettled` had no caller
+    #    after #159 moved the legs behind /api/performance/bot-legs — deleted. The same
+    #    ALLOWLIST (won/lost/void/push, never a 'pending' denylist) is pinned in item 3 below.
+    assert "dropVipUnsettled" not in agg, "the uncalled dropVipUnsettled filter is back"
 
     # 3. [[#159]] no raw bet array reaches a browser any more: the detail view fetches its legs
     #    from /api/performance/bot-legs (service_role), which returns SETTLED legs only for VIP
@@ -47464,13 +47652,13 @@ def test_own_picks_book_seam():
         "the Estonian allow-list")
 
     # 3. The deny-list may only ever contain NON-OFFERS, never a legality call.
-    m = _re.search(r"_NON_OFFERS: frozenset = frozenset\(\{(.*?)\}\)", src, _re.S)
-    assert m, "_NON_OFFERS is gone"
-    # Parse QUOTED STRINGS, not whitespace tokens. "Betfair Exchange" is a
-    # football-data.co.uk CSV import and is correctly excluded; the live
-    # "Betfair" book is a different entity the sharp arm publishes from. A
-    # naive split conflates them and fails on a correct exclusion.
-    listed = set(_re.findall(r'"([^"]+)"', m.group(1)))
+    # #162 A-R12 (2026-09-26): the literal moved to workers/utils/odds_quality.py
+    # (NON_OFFER_BOOKS, the ONE deny-list); daily_pipeline_v2._NON_OFFERS is now an
+    # alias of it. Check the imported set itself — "Betfair Exchange" (a CSV import,
+    # correctly excluded) and the live "Betfair" book stay distinct entries.
+    assert "_NON_OFFERS: frozenset = NON_OFFER_BOOKS" in src, "_NON_OFFERS is gone"
+    from workers.jobs.daily_pipeline_v2 import _NON_OFFERS as _no
+    listed = set(_no)
     for legal_only in ("Marathonbet", "10Bet", "888Sport", "Pinnacle", "Bet365",
                        "1xBet", "Betfair", "BetVictor", "SBO"):
         assert legal_only not in listed, (

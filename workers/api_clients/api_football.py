@@ -1878,7 +1878,7 @@ def get_fixture_events(fixture_id: int) -> list[dict]:
 # AWAY. Any per-team split must flip it; a match-total does not care.
 #
 # No production consumer is affected today — the only `match_events` readers in
-# workers/ are inplay_bot's red-card lookups. This exists so the next analysis
+# workers/ were inplay_bot's red-card lookups (deleted #162 W7.2). This exists so the next analysis
 # does not rediscover it: NEW-MARKETS-LINESHOP already hit it once.
 # Dedup for CARD-EVENT-SILENT-DROP: warn once per unseen (type, detail).
 _UNKNOWN_EVENT_SEEN: set[tuple[str, str]] = set()

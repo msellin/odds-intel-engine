@@ -129,8 +129,13 @@ def persist_imperva_cookies(cookies: dict[str, str], *, source: str = "cdp_chrom
 
 def mark_mac_daemon_tick(result: dict) -> None:
     """Write the Mac daemon's per-tick heartbeat so the Telegram /status
-    command can answer 'is the daemon actually running?'. Called at the
-    end of every _tick() in coolbet_mac_daemon, success OR failure —
+    command can answer 'is the daemon actually running?'.
+
+    NOTE #162 (2026-09-26): coolbet_mac_daemon was deleted (retired 2026-09-10, file gone
+    2026-09-25) and nothing calls mark_mac_daemon_tick any more, so
+    `mac_daemon_last_tick_at` is frozen and always reads stale.
+
+    Was called at the end of every _tick() in coolbet_mac_daemon, success OR failure —
     a "dead" tick (errors=1) still bumps the timestamp so a stale
     `mac_daemon_last_tick_at` always means the process itself is
     dead/asleep/unloaded, not just failing.
@@ -515,7 +520,7 @@ def is_daemon_self_pause(reason: str | None) -> bool:
     PUBLISHED — `is_publishing_paused()` does, and neither kind of placement
     pause touches it. It still decides auto-clear eligibility.
     """
-    # PREFIX match on "<marker>:" — exactly how coolbet_mac_daemon writes it
+    # PREFIX match on "<marker>:" — exactly how coolbet_mac_daemon wrote it (deleted, #162 W4.6)
     # (f"{DAEMON_SELF_PAUSE_MARKER}: {n} consecutive errors over {m}m"). A substring
     # match auto-resumed reasons like "this is NOT a daemon self-pause" (#139 review);
     # the SQL function admin_set_control uses the same prefix rule (migration 413).

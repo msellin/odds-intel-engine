@@ -1,0 +1,20 @@
+# #162 W7.3 remainder — migration 460 drops the duplicate bots policy "Public read" and the dead
+# shadow_bets_anon_read. anon must still read every bots row through the kept public_read.
+task: "#162"
+checks:
+  - name: exactly_one_bots_policy_none_on_shadow_bets
+    mode: eventually
+    sql: |
+      SELECT count(*) FROM pg_policies
+       WHERE (tablename = 'bots' AND policyname <> 'public_read')
+          OR tablename = 'shadow_bets'
+    expect: "== 0"
+    run_after: {migration: "460"}
+    expires: "2026-09-28T12:00:00Z"
+  - name: bots_public_read_kept
+    mode: eventually
+    sql: |
+      SELECT count(*) FROM pg_policies WHERE tablename = 'bots' AND policyname = 'public_read'
+    expect: "== 1"
+    run_after: {migration: "460"}
+    expires: "2026-09-28T12:00:00Z"

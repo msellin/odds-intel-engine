@@ -9,7 +9,8 @@ across three tables and several switches: the operator kill switch
 (`placement_paused`), the arming switch (`real_money_armed`), the footprint pause
 (`daemons_paused` — context only since 2026-09-24: it stops sweeping, not bets), the
 session/JWT health (`session_healthy`, `jwt_exp_at`), the Mac daemon's
-liveness (`mac_daemon_last_tick_at`), and which bots are actually toggled ON
+liveness (`mac_daemon_last_tick_at` — frozen since that daemon was deleted, #162
+W4.6; informational only), and which bots are actually toggled ON
 (`coolbet_placer_bots.ui_place_enabled`). Nobody surface answered all of it
 at once, so "why didn't it place?" meant a manual join across all of them.
 
@@ -40,7 +41,9 @@ from datetime import datetime, timezone
 
 log = logging.getLogger(__name__)
 
-# Daemon tick freshness threshold. The Mac daemon ticks every ~30 min, so a
+# Daemon tick freshness threshold. (The Mac daemon is deleted, #162 W4.6, so
+# the tick it read is frozen; kept for the informational odds_api_path block.)
+# The Mac daemon ticked every ~30 min, so a
 # tick older than this means the launchd job is dead/asleep/unloaded and no
 # placement is actually happening even if every other gate is green. Matches
 # the daily-summary DAEMON_STALE_MIN default.
@@ -118,7 +121,7 @@ def _evaluate_readiness(state: dict, bots: list[dict], now: datetime | None = No
             + (f": {state.get('money_gate_reason')}" if state.get("money_gate_reason") else "")
         )
     # FOOTPRINT-NOT-A-MONEY-GATE (#139, owner decision 2026-09-24): `daemons_paused`
-    # stops the Coolbet odds SWEEPS, the feed watchdog and the paper Mac daemon. It
+    # stops the Coolbet odds SWEEPS and the feed watchdog (and stopped the paper Mac daemon, deleted #162 W4.6). It
     # does NOT stop the real-money placers — `placement_gate.assert_run_may_place()`
     # reads placement_paused + real_money_armed + money_gate_ready (mig 436), and the owner chose to keep it
     # that way ("only sweeping stops"). It used to be listed as a blocker here, so the

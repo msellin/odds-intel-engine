@@ -34,6 +34,10 @@ CONSENSUS_BOOKS = (
 # Excluded on purpose: Pinnacle (separate input), SBO (worst accuracy, 15% margin),
 # Unibet-Kambi (retired, prices off-site), Avg/Max (synthetic CSV aggregates),
 # Betfair Exchange (an exchange, not a book), and junk names.
+# NOT derived from the one deny-list (odds_quality.NON_OFFER_FEEDS, #162 A-R12) on
+# purpose: this is an ALLOW-list for a fitted model, and it keeps Unibet, BetWin and
+# Betfred — which the deny-list excludes — for their HISTORY. Changing it changes the
+# model's input and needs a refit twin (audit A-R12).
 OUTLIER_GAP = 0.25
 LEG_SPREAD_S = 120
 

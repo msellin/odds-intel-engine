@@ -1,5 +1,6 @@
 """BOT-MATURITY-REVIEW-WEEKLY (2026-06-15): Sunday rollup of per-bot performance
-with PROMOTE / DEMOTE / HOLD verdict for each currently-active bot.
+with a PROMOTE / REVIEW / HOLD verdict for each currently-active bot (REVIEW is
+read from the view bot_review_flag since #162 W6.5 — it used to be DEMOTE).
 
 Origin: 2026-06-13 audit found `bot_high_alignment` (maturity=beta, -EUR 56 over
 50 real bets) had been auto-placing real money because the Mac daemon lacked
@@ -44,9 +45,22 @@ Verdict thresholds (verdict window = 60d) — see BOT-GATE-TSTAT below:
   basis    de-vigged Pinnacle CLV once n >= CLV_MIN_N (100), else per-bet ROI
            once n >= MIN_SETTLED_FOR_DECISION (200)
   PROMOTE  t >= +1.65 AND maturity != active AND >= 14d observed
-  DEMOTE   t <= -1.65, at ANY maturity
-  DEMOTE   real-money tripwire: calibrated AND real n >= 20 AND real ROI < -5%
+  REVIEW   the view `bot_review_flag` says review_flag (migration 437: >= 50
+           settled legs with a sharp-anchor CLV AND the upper 95% CI of that
+           CLV < 0), at ANY maturity
   HOLD     everything else; the digest names the binding constraint per bot
+
+#162 W6.5 (2026-09-26) — ONE retirement flag. This job used to emit DEMOTE on
+its OWN rules: a t <= -1.65 test on its own COALESCE of four CLV definitions,
+plus a real-money ROI tripwire (calibrated, real n >= 20, real ROI < -5%). The
+/admin/bots page and the Overview attention inbox read `bot_review_flag`
+instead, so the Sunday email and the page could disagree about the same bot on
+the same day. Both own rules are gone; REVIEW is read straight from the view
+(`_fetch_review_flags`), so the two surfaces cannot drift. The word is REVIEW,
+not DEMOTE, because the owner rule (§3.3) is that it is a FLAG, never an
+automatic demotion. The real-money columns stay in every bot block, so a losing
+real-money bot is still visible — it just no longer carries a second verdict.
+PROMOTE keeps its t-test (the view has no promotion leg; #155 owns promotion).
 
 BOT-GATE-TSTAT (2026-08-28, same day as the above) — the first cut of the paper
 path used RAW thresholds (ROI > +3%, CLV > +3%, DEMOTE at ROI < -10%). That was
@@ -107,12 +121,6 @@ import psycopg2  # noqa: E402
 VERDICT_WINDOW_DAYS    = 60
 WINDOW_DAYS            = (30, 60, 90)
 
-# --- Real-money path (original gate, kept as the fast lane) ------------------
-MIN_BETS_FOR_VERDICT   = 20     # min settled REAL bets for the real-money path
-PROMOTE_REAL_ROI_PCT   = 10.0   # real ROI > +10%
-PROMOTE_SIM_CLV_PCT    = 5.0    # paper CLV > +5%
-DEMOTE_REAL_ROI_PCT    = -5.0   # real ROI < -5%
-
 # --- Paper path (BOT-GATE-REACHABLE 2026-08-28, revised same day) ------------
 # The only path a non-calibrated bot can actually walk: real_bets is gated on
 # maturity=calibrated, so paper evidence is the ONLY evidence a beta bot can
@@ -151,7 +159,7 @@ DEMOTE_REAL_ROI_PCT    = -5.0   # real ROI < -5%
 # Two gates deciding the same question with different numbers is how a bot ends
 # up promoted on one surface and retired on the other. Smoke pins the pairing.
 PROMOTE_T                   = 1.65   # one-sided 5% test
-RETIRE_T                    = -1.65
+# (RETIRE_T = -1.65 removed #162 W6.5 — REVIEW now comes from bot_review_flag.)
 CLV_MIN_N                   = 100    # CLV converges ~222x faster than ROI
 MIN_SETTLED_FOR_DECISION    = 200    # fallback when the bot has no CLV anchor
 MIN_DAYS_FOR_DECISION       = 14     # two weekend cycles
@@ -174,6 +182,19 @@ def _fetch_active_bots(cur):
         ORDER BY maturity_label, name
     """)
     return cur.fetchall()
+
+
+def _fetch_review_flags(cur):
+    """#162 W6.5 — {bot_name: (review_flag, reason, clv_n, clv_public, upper95, min_n)}
+    from the view `bot_review_flag` (migration 437), the SAME rows /admin/bots and
+    the Overview attention inbox read. The view covers exactly the bots
+    _fetch_active_bots returns (is_active AND retired_at IS NULL)."""
+    cur.execute("""
+        SELECT bot_name, review_flag, reason, clv_n_public,
+               clv_public, clv_public_upper95, min_n
+        FROM bot_review_flag
+    """)
+    return {r[0]: r[1:] for r in cur.fetchall()}
 
 
 def _fetch_sim_bets(cur, bot_id):
@@ -407,53 +428,45 @@ def _clv_basis_note(basis, ledger):
     return f" [CLV basis: {ledger}]"
 
 
-def _verdict(maturity, gate_t, basis, n_basis, observation_days, real60, ledger=None):
-    """Compute PROMOTE / DEMOTE / HOLD.
+def _verdict(maturity, gate_t, basis, n_basis, observation_days, flag=None, ledger=None):
+    """Compute PROMOTE / REVIEW / HOLD.
 
     Returns (verdict, reason) — reason names WHICH rule fired, or which
     constraint binds, so the operator can act without re-deriving it.
+
+    `flag` is the bot's `bot_review_flag` row (review_flag, reason, clv_n,
+    clv_public, upper95, min_n), or None when the view has no row for it.
     """
-    real_n, _, real_roi, _ = real60
     # [[#175]] 2026-09-26: the top status is ACTIVE (BETA + CALIBRATED merged into it).
     is_calibrated = maturity == "active"
 
-    # ---- Real-money tripwire ----------------------------------------------
-    # Deliberately NOT a statistical verdict: at n=20 the ROI standard error is
-    # ~30pp, so "real ROI < -5%" is a t of about -0.17 and will fire on noise.
-    # It is kept anyway because the loss function is asymmetric — a false
-    # DEMOTE costs a calibrated bot nothing but paper trading, while a false
-    # negative costs actual money every day it persists. Trigger-happy is the
-    # correct bias here, and calling it a tripwire rather than a verdict is the
-    # honest way to say so.
-    if (is_calibrated
-            and real_n >= MIN_BETS_FOR_VERDICT
-            and real_roi is not None
-            and real_roi < DEMOTE_REAL_ROI_PCT):
-        return "DEMOTE", (f"real-money tripwire: ROI {real_roi:+.1f}% on n={real_n} "
-                          f"(not a significance test — see docstring)")
+    # ---- The retirement flag: READ, never recomputed (#162 W6.5) ----------
+    # Applies at ANY maturity — a beta bot is visible on /picks, so a losing
+    # one must be flaggable. The rule lives in ONE place (migration 437).
+    if flag is not None and flag[0]:
+        _, _, clv_n, clv_public, upper95, _ = flag
+        return "REVIEW", (f"bot_review_flag: sharp-anchor CLV {float(clv_public) * 100:+.1f}% "
+                          f"on n={clv_n}, upper 95% CI {float(upper95) * 100:+.1f}% < 0 "
+                          f"(a flag, never automatic — same row as /admin/bots)")
+    flag_note = f"; review flag: {flag[1]}" if flag is not None else "; review flag: no row"
 
     # ---- Not enough evidence to decide ------------------------------------
     if gate_t is None:
         need = CLV_MIN_N if basis == "clv" else MIN_SETTLED_FOR_DECISION
         label = "with CLV" if basis == "clv" else "settled (no CLV anchor)"
-        return "HOLD", f"{n_basis}/{need} {label}"
+        return "HOLD", f"{n_basis}/{need} {label}{flag_note}"
     if observation_days < MIN_DAYS_FOR_DECISION:
         return "HOLD", (f"{observation_days:.0f}/{MIN_DAYS_FOR_DECISION} days observed "
-                        f"(n={n_basis} but too recent)")
+                        f"(n={n_basis} but too recent){flag_note}")
 
-    # ---- The gate ----------------------------------------------------------
-    if gate_t <= RETIRE_T:
-        # Applies at ANY maturity. Before BOT-GATE-REACHABLE this was
-        # calibrated-only, so a losing beta bot stayed beta — and beta is
-        # visible to every signed-in user on /picks.
-        return "DEMOTE", (f"{basis} t={gate_t:+.2f} <= {RETIRE_T:+.2f} on n={n_basis}"
-                          f"{_clv_basis_note(basis, ledger)}")
+    # ---- The promotion gate -----------------------------------------------
     if gate_t >= PROMOTE_T:
         if is_calibrated:
-            return "HOLD", f"already active ({basis} t={gate_t:+.2f})"
-        return "PROMOTE", f"{basis} t={gate_t:+.2f} >= {PROMOTE_T:+.2f} on n={n_basis}"
+            return "HOLD", f"already active ({basis} t={gate_t:+.2f}){flag_note}"
+        return "PROMOTE", (f"{basis} t={gate_t:+.2f} >= {PROMOTE_T:+.2f} on n={n_basis}"
+                           f"{_clv_basis_note(basis, ledger)}")
 
-    return "HOLD", f"{basis} t={gate_t:+.2f} inconclusive on n={n_basis}"
+    return "HOLD", f"{basis} t={gate_t:+.2f} inconclusive on n={n_basis}{flag_note}"
 
 
 def _fmt_pct(v):
@@ -567,6 +580,7 @@ def main():
     cur = conn.cursor()
 
     bots = _fetch_active_bots(cur)
+    review_flags = _fetch_review_flags(cur)
 
     print(f"Bot maturity review · {ran_at.strftime('%Y-%m-%d %H:%M UTC')}")
     print(f"Verdict window: last {VERDICT_WINDOW_DAYS}d (★ in tables below)")
@@ -574,20 +588,20 @@ def main():
     print(f"  basis    · de-vigged Pinnacle CLV once n >= {CLV_MIN_N}; else per-bet ROI once n >= {MIN_SETTLED_FOR_DECISION}")
     print(f"             (CLV per-bet SD 0.090 vs ROI 1.341 — CLV needs ~222x fewer bets)")
     print(f"  PROMOTE  · t >= {PROMOTE_T:+.2f} AND maturity != active AND >= {MIN_DAYS_FOR_DECISION}d observed")
-    print(f"  DEMOTE   · t <= {RETIRE_T:+.2f} at ANY maturity")
-    print(f"  DEMOTE   · real-money tripwire: calibrated AND real n >= {MIN_BETS_FOR_VERDICT} "
-          f"AND real ROI < {DEMOTE_REAL_ROI_PCT:+.0f}% (deliberately not a significance test)")
+    print("  REVIEW   · view bot_review_flag: >= 50 settled legs with a sharp-anchor CLV AND the upper")
+    print("             95% CI of that CLV < 0, at ANY maturity — the SAME flag /admin/bots shows")
+    print("             (a flag, never automatic)")
     print("  HOLD     · else — the reason column names the binding constraint")
     print()
-    print("Thresholds are shared with /admin/shadow-bots. A raw ROI gate was measured at")
-    print("24% false-demote on a break-even bot; the t-gate holds both error rates at ~5%.")
+    print("A raw ROI gate was measured at 24% false-demote on a break-even bot; the PROMOTE")
+    print("t-gate holds its error rate at ~5%.")
     print()
     print("Paper ledger = simulated_bets when the bot writes there, else shadow_bets_unique")
     print("(sweep/pin/coolbet-value bots are shadow-only). Promotion remains a MANUAL migration.")
     print()
 
     verdict_counts = defaultdict(int)
-    actionable = []   # PROMOTE / DEMOTE go to the top
+    actionable = []   # PROMOTE / REVIEW go to the top
     held       = []   # HOLD bots with non-zero activity in the 90d window
     dormant    = []   # active in DB but zero PAPER (sim or shadow) AND zero real
                       # bets in 90d — e.g. CS2 bots writing to cs2_real_bets,
@@ -612,12 +626,13 @@ def main():
         # `source` is the ledger _fetch_paper_bets chose, and therefore the
         # CLV definition this verdict rests on — see _clv_basis_note.
         verdict, reason = _verdict(
-            maturity, gate_t, basis, n_basis, obs_days, real60, ledger=source)
+            maturity, gate_t, basis, n_basis, obs_days,
+            flag=review_flags.get(name), ledger=source)
         verdict_counts[verdict] += 1
 
         block = (name, maturity, verdict, reason, source,
                  sim30, sim60, sim90, real30, real60, real90)
-        if verdict in ("PROMOTE", "DEMOTE"):
+        if verdict in ("PROMOTE", "REVIEW"):
             actionable.append(block)
         elif sim90[0] == 0 and real90[0] == 0:
             # Truly silent — no sim picks, no real bets across the full 90d
@@ -628,7 +643,7 @@ def main():
             held.append(block)
 
     n_dormant = len(dormant)
-    print(f"=== HEADLINE ===  {verdict_counts['PROMOTE']} PROMOTE · {verdict_counts['DEMOTE']} DEMOTE · "
+    print(f"=== HEADLINE ===  {verdict_counts['PROMOTE']} PROMOTE · {verdict_counts['REVIEW']} REVIEW · "
           f"{verdict_counts['HOLD']} HOLD ({n_dormant} dormant) · {len(bots)} active bots")
     print()
 
@@ -640,12 +655,12 @@ def main():
     _print_calibration_section(cur, ran_at)
 
     if actionable:
-        print("============================ ACTIONABLE (PROMOTE / DEMOTE) ============================")
+        print("============================ ACTIONABLE (PROMOTE / REVIEW) ============================")
         print()
         for b in actionable:
             _print_bot_block(*b)
     else:
-        print("(no PROMOTE / DEMOTE verdicts this week — all bots HOLD)")
+        print("(no PROMOTE / REVIEW verdicts this week — all bots HOLD)")
         print()
 
     print("============================== HOLD (no action needed) ===============================")

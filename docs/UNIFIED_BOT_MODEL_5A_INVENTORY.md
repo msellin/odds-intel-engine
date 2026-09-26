@@ -2,6 +2,8 @@
 
 > **DELETED 2026-09-26 (#162 review):** the pre-kickoff "PLACE MANUALLY" catch-net `coolbet_prekickoff_alert` (cited below) is gone — it keyed on the retired daemon heartbeat, chose picks by maturity label and used the old floor. Real money runs only through the UI placer + best-price router (`docs/COOLBET_OWN_BETTING.md`).
 
+> **CHANGED 2026-09-26 (#162 W7.3 / audit C §7):** deleted as dead code — web `getModelV2Stats` (and its /performance call), `botRecentRoi`, `fetchUpcomingPicks`, `dropVipUnsettled`; engine `workers/jobs/weekly_digest.py`, `settlement._build_upcoming_model_summary`, the unused footer-CLV read in `daily_pipeline_v2`. Rows below that name them describe the pre-deletion state.
+
 > **CHANGED 2026-09-26 (#162 W5.4 + W6.3, migration 454):** the arm→bot mapping is ONE table now (`forward_test_arm_bots`, read through `forward_test_leg_arm`), shared by `picks_public_all`, `picks_forward_test_public`, `clv_sharp_legs` and `bot_ledger`; ungraded consensus maps to `bot_consensus_b_v1` everywhere (`consensus_ungraded` is gone — zero rows had it). The published-arm lists are `forward_test_arms`, and the sharp-anchor CASE is the function `anchor_source()` / `anchor_clv()` / `anchor_p_close()`. The "written three times" note below is history.
 
 > **CHANGED 2026-09-26 (#162 W6.8):** `/admin/real-bets` is RETIRED — it redirects to the Real money tab of `/admin/bots` (`?section=money`, `admin/bots/money-view.tsx`, loader `src/lib/admin-money.ts`). `getRealBets` in engine-data.ts has no page reader.

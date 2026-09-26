@@ -995,8 +995,9 @@ def resolve_placement_target(
     Returns None if no matching market+outcome was found OR the outcome has
     no odds entry (suspended / dropped).
 
-    Used by coolbet_placer.place_all_bets to resolve a paper bet into the
-    actual Coolbet IDs needed for placement.
+    Resolves a bot's pick into the actual Coolbet IDs needed for placement.
+    (Its original caller, coolbet_placer.place_all_bets, was deleted with the
+    API placer — #162 W4.6.)
     """
     target_market, target_sel, target_line = _normalise_our_target(our_market, our_selection)
     if target_market is None:

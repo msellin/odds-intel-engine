@@ -14,7 +14,8 @@ ONE-TIME SETUP:
     # → Press ENTER in terminal when logged in. Profile is persisted to
     #   ~/.config/oddsintel/coolbet-playwright-profile/ — survives forever.
 
-RUNTIME (called from Mac daemon):
+RUNTIME (the Mac daemon that called this was deleted, #162 W4.6; the
+session helpers below are now called by the UI placer and the feed watchdog):
     bets = fetch_pending_bets()
     # → Returns list of {match_name, market, selection, stake, odds,
     #   placed_at, ticket_id} for everything in PENDING status.
@@ -793,11 +794,11 @@ def proactive_jwt_refresh(*, min_ttl_s: int = 1200) -> dict:
     currently-persisted token's TTL is below `min_ttl_s`. No-op when the
     DB JWT is comfortably fresh.
 
-    Designed for the Mac daemon to call at the start of every tick BEFORE
-    the placer touches Coolbet — so by the time `place_all_bets` opens a
-    session, the DB JWT is fresh and `CoolbetSession.__init__` adopts it
-    cleanly. Eliminates the race where a tick starts with a JWT that
-    expires mid-request.
+    Called through `ensure_session_live` (the feed watchdog's :20/:50
+    session-keep and the UI placer) before anything touches Coolbet — so by
+    the time a session opens, the DB JWT is fresh and `CoolbetSession.__init__`
+    adopts it cleanly. (Written for the retired Mac daemon's per-tick call
+    before the deleted `place_all_bets`, #162 W4.6.)
 
     This complements (does not replace) the reactive path in
     `CoolbetSession._login` → `_try_cdp_jwt`. That path runs at the moment
@@ -1674,9 +1675,9 @@ def fetch_pending_bets_via_cdp(*, timeout_ms: int = 30000) -> list[dict]:
     cookies + Imperva session are reused; no navigation, no focus
     event, no window flash.
 
-    Returns [] on any failure — caller (Mac daemon) treats empty as
-    'no CDP sync this tick, fall back to user_placed_at + Telegram-
-    button dedup'."""
+    Returns [] on any failure — the caller treats empty as 'no CDP sync
+    this run, fall back to user_placed_at + Telegram-button dedup'. (The
+    original caller, the Mac daemon, is deleted — #162 W4.6.)"""
     try:
         import asyncio
         body = asyncio.run(_async_fetch_pending_bets(timeout_s=timeout_ms / 1000.0))

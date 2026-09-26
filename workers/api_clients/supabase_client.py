@@ -5664,9 +5664,10 @@ def store_real_bet(
     """Insert a real-money bet (single or combo), return its UUID.
 
     `placed_real` (COOLBET-PICK-TABLE-AUDIT Stage 2): TRUE = real money confirmed
-    (UI placer balance-delta / reconciled manual bet); FALSE = paper (the paper
-    daemon record=True/execute=False); None = caller didn't say (legacy). Callers
-    on the real path must pass True; the paper daemon passes execute (=False).
+    (UI placer balance-delta / reconciled manual bet); FALSE = paper (historically
+    the paper Mac daemon's record=True/execute=False — that daemon is deleted,
+    #162 W4.6); None = caller didn't say (legacy). Callers on the real path must
+    pass True.
 
     For combo bets: pass combo_legs (list of leg dicts) and system_type
     ('straight' / 'fours_up' / 'no_singles'). match_id should be the first

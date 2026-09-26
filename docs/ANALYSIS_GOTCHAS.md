@@ -573,7 +573,9 @@ corollaries that bit at the same time:
   never demoted — and beta is visible to every signed-in user on `/picks`.
 
 Fixed 2026-08-28 with a paper-evidence path (n >= 100, ROI > +3%, CLV > +3%,
-picks spanning >= 21d). The span requirement matters: `bot_pin_1x2_home_v1`
+picks spanning >= 21d). *(CHANGED 2026-09-26, #162 W6.5: DEMOTE is now REVIEW, read
+from the view `bot_review_flag` — the same retirement flag /admin/bots shows — at
+any maturity; the job keeps only its PROMOTE t-test.)* The span requirement matters: `bot_pin_1x2_home_v1`
 reached n=104 in **6 days**, and volume alone is not evidence of durability.
 
 ---

@@ -2,7 +2,7 @@
 
 Called by job_weekly_bot_review (Sunday 06:30 UTC, after the 03/04/05/06 chain
 finishes). Ships the full weekly_bot_review.py stdout — per-bot 30/60/90d
-hit-rate / ROI / CLV / sim-vs-real divergence + PROMOTE / DEMOTE / HOLD verdict
+hit-rate / ROI / CLV / sim-vs-real divergence + PROMOTE / REVIEW / HOLD verdict
 — to ADMIN_ALERT_EMAIL via Resend.
 
 Origin: 2026-06-13 audit found `bot_high_alignment` (maturity=beta, -€56 over
@@ -36,16 +36,17 @@ def _render_html(stdout: str, ran_at: str) -> str:
       <h2 style='margin:0 0 8px 0'>Weekly bot maturity review</h2>
       <p style='color:#666;margin:0 0 16px 0'>
         Per-bot 30/60/90d hit-rate, ROI, CLV, and sim-vs-real divergence with a
-        PROMOTE / DEMOTE / HOLD verdict. Generated {ran_at}.
+        PROMOTE / REVIEW / HOLD verdict. Generated {ran_at}.
       </p>
       <pre style='background:#f7f7f7;border:1px solid #e0e0e0;padding:14px;
                   border-radius:6px;font-family:monospace;font-size:12px;
                   line-height:1.45;overflow-x:auto;white-space:pre'>{safe}</pre>
       <p style='color:#888;font-size:13px;margin-top:16px'>
         Re-run any time: <code>python3 scripts/weekly_bot_review.py</code>.
-        Thresholds (real ROI &gt; +10% / sim CLV &gt; +5% to promote, real ROI &lt; -5%
-        to demote a calibrated bot) are starting points — refine after the first
-        2-3 weeks. Background: PRIORITY_QUEUE.md → BOT-MATURITY-REVIEW-WEEKLY.
+        PROMOTE = a one-sided t-test (t &gt;= +1.65) on paper CLV, else ROI.
+        REVIEW = the view bot_review_flag (&gt;= 50 legs, upper 95% CI of the
+        sharp-anchor CLV &lt; 0) — the same flag /admin/bots shows; a flag,
+        never automatic. Background: PRIORITY_QUEUE.md → BOT-MATURITY-REVIEW-WEEKLY, #162 W6.5.
       </p>
     </div>
     """

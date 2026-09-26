@@ -49,6 +49,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from statistics import median
 
+from workers.utils.odds_quality import NON_OFFER_FEEDS
+
 PIN = "Pinnacle"
 PIN_MAX_AGE_MIN = 60           # AF-Pinnacle matches the site to +0.02 pp when < 1 h old
 PIN_TIGHT_OVERROUND = 0.04     # the pre-registered ≤4% gate of the published sharp arm
@@ -57,9 +59,11 @@ COMMON_WINDOW_MIN = 120
 SET_TOLERANCE_S = 120
 GUARD_RATIO = 1.5625           # 1.25² — kills inversions/data faults, not opinions
 # Aggregates, retired or unplaceable-and-divergent feeds, and the one book measured
-# worse than Pinnacle. Never anchor members.
-NEVER_IN_ANCHOR = frozenset({"Max", "Avg", "Betfair Exchange", "BetWin", "Betfred",
-                             "Unibet", "Unibet-Kambi", "Coolbet", "Coolbet-OddsAPI"})
+# worse than Pinnacle. Never anchor members. #162 A-R12: the shared non-offer part is
+# the ONE deny-list (odds_quality.NON_OFFER_FEEDS); Coolbet is the anchor's own
+# addition. Contents unchanged — the api-football* synthetics in NON_OFFER_BOOKS are
+# deliberately NOT added here (that would change the anchor's input).
+NEVER_IN_ANCHOR = NON_OFFER_FEEDS | {"Coolbet", "Coolbet-OddsAPI"}
 # Same platform, same prices: counting both would double one opinion.
 SKIN_OF = {"20bet": "Tonybet", "X3000": "Paf", "Speedybet": "Paf"}
 

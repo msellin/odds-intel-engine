@@ -65,7 +65,7 @@ def get_pool() -> pool.ThreadedConnectionPool:
 
 
 def get_pool_status() -> dict:
-    """Return pool utilization snapshot — used by /health and InplayBot heartbeat.
+    """Return pool utilization snapshot — used by /health (and by InplayBot's heartbeat until it was deleted, #162 W7.2).
 
     psycopg2 ThreadedConnectionPool internals:
       _used  — dict of checked-out connections (in use right now)

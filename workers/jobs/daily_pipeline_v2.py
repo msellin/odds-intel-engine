@@ -41,7 +41,8 @@ from workers.api_clients.supabase_client import (
     batch_write_morning_signals,
     build_match_feature_vectors_live,
 )
-from workers.notify.telegram import send_telegram, send_telegram_to_users, clv_footer_line, get_elite_30d_clv
+from workers.notify.telegram import send_telegram, send_telegram_to_users
+from workers.utils.odds_quality import NON_OFFER_BOOKS  # the ONE deny-list (#162 A-R12)
 from workers.model.improvements import (
     calibrate_prob, compute_odds_movement, compute_alignment,
     compute_kelly, compute_stake,
@@ -1290,11 +1291,10 @@ ODDS_MAX_AGE_HOURS = float(os.getenv("ODDS_MAX_AGE_HOURS", "48"))
 #   Max / Avg     synthetic consensus columns, not a book
 #   Betfair Exchange / BetWin / Betfred   football-data.co.uk CSV imports
 #   api-football* synthetic; see BLACKLISTED_OU_SOURCES
-_NON_OFFERS: frozenset = frozenset({
-    "Unibet-Kambi", "Unibet", "Max", "Avg",
-    "Betfair Exchange", "BetWin", "Betfred",
-    "api-football", "api-football-live",
-})
+# #162 A-R12 (2026-09-26): the list itself lives in ONE place,
+# workers/utils/odds_quality.NON_OFFER_BOOKS (contents unchanged); the name is
+# kept because pick_price and the smoke tests import it from here.
+_NON_OFFERS: frozenset = NON_OFFER_BOOKS
 
 
 def is_publishable_book(bookmaker: str) -> bool:
@@ -4500,11 +4500,9 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
 
     # Flush consolidated per-position alerts (one per match+market+selection,
     # listing all agreeing bots so multi-bot agreement shows in a single message).
-    # GROWTH-CLV-FIRST-MESSAGING (2026-06-05): fetch the rolling CLV ONCE per
-    # pipeline invocation so we don't slam dashboard_cache for each alert in
-    # the broadcast loop below. If the value is None (cache stale / empty),
-    # clv_footer_line() falls back to a static link.
-    _clv_for_footer = get_elite_30d_clv()
+    # (#162 W7.3 2026-09-26: the per-run footer-CLV read from dashboard_cache
+    # that stood here is deleted — nothing in this loop has
+    # appended clv_footer_line() since the operator alerts went off, 2026-09-11.)
     from workers.automation.coolbet_session import coolbet_match_url
     for _tk, _tb in _tele_bets.items():
         _n = len(_tb["bots"])

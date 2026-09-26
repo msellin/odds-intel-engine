@@ -123,8 +123,9 @@ def _state():
 
 
 def _load_fresh_imperva_cookies_from_db(*, max_age_hours: float = 2.0) -> dict[str, str] | None:
-    """COOLBET-CDP-COOKIE-EXPORT (2026-07-08): read Imperva cookies that
-    the Mac daemon harvests from CDP-Chrome every ~30 min. Returns the
+    """COOLBET-CDP-COOKIE-EXPORT (2026-07-08): read Imperva cookies
+    harvested from CDP-Chrome (by the Mac daemon until its retirement, #162
+    W4.6 — see the 2026-09-06 note below for who refreshes them). Returns the
     cookie dict if the snapshot is fresher than `max_age_hours`, else
     None so the caller falls back to env cookies.
 
@@ -256,7 +257,7 @@ def _fs_call(body: dict, *, timeout_s: int = 90) -> dict:
     up a stale remote URL from .env and 500. Mac-only opt-in by being set;
     VPS-hosted callers don't see it.
 
-    DEFENSIVE-FS-URL (2026-06-17): legacy fallback for the Mac daemon path
+    DEFENSIVE-FS-URL (2026-06-17): legacy fallback for the (deleted) Mac daemon path
     — if FLARESOLVERR_URL points to a remote host AND COOLBET_MAC_POLL_S
     is set (daemon-only signal from launchd plist), prefer localhost too.
     Retained for safety; COOLBET_FS_LOCAL_URL supersedes it when set."""

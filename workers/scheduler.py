@@ -964,11 +964,6 @@ def job_publish_daily_picks():
 
 
 
-def job_weekly_digest():
-    from workers.jobs.weekly_digest import run_weekly_digest
-    _run_job("weekly_digest", run_weekly_digest)
-
-
 def job_prune_anon_users():
     """ANON-AUTH PHASE 4 — weekly prune of stale anonymous Supabase users
     (see workers/jobs/prune_anon_users.py for details + safety cap)."""
@@ -1362,7 +1357,8 @@ def job_weekly_threshold_check():
 
 def job_weekly_bot_review():
     """BOT-MATURITY-REVIEW-WEEKLY (2026-06-15): Sunday rollup of per-bot
-    performance with PROMOTE / DEMOTE / HOLD verdicts.
+    performance with PROMOTE / REVIEW / HOLD verdicts (REVIEW = the view
+    bot_review_flag, the same flag /admin/bots shows — #162 W6.5).
 
     Runs Sunday 06:30 UTC, AFTER weekly_threshold_check (06:00) so the
     operator gets the gate counts and the bot review in two adjacent emails.
@@ -3162,12 +3158,12 @@ def main():
 
     # Create scheduler — coalesce + max_instances=1 prevent same-job stacking;
     # executor cap of 4 bounds cross-job concurrency. APScheduler's default is
-    # 10 threads, which combined with LivePoller + Flask + InplayBot can fan out
+    # 10 threads, which combined with LivePoller + Flask (+ InplayBot, deleted #162 W7.2) could fan out
     # to 15+ simultaneous DB conns at startup when missed jobs catch up. 4 is
     # plenty for the actual workload (most jobs are short, scheduled minutes apart).
     # misfire_grace_time=300: APScheduler's default is 1s, which causes
     # once-a-day jobs (Watchlist 08:30, Stripe Reconcile 09:00, Odds 11:00…) to be
-    # silently skipped when GIL contention from LivePoller/Flask/InplayBot delays
+    # silently skipped when GIL contention from LivePoller/Flask delays
     # the scheduler thread by 2-3s at fire time. 5 min is wider than any normal
     # jitter and shorter than the smallest job interval (5min healthcheck), so
     # late runs still execute promptly. coalesce=True keeps stale bursts to one run.
