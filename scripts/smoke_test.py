@@ -57230,8 +57230,11 @@ def test_model_accuracy_job():
     assert abs(ma._base_ll("over_under_25", oc, ["a", "b"]) - math.log(2)) < 1e-12, "50/50 base rate"
     src = _engine_path("workers/jobs/model_accuracy.py").read_text()
     for pin in ("p.created_at < m.date", "r.updated_at < m.date", "o.updated_at < m.date",
-                'o."timestamp" < m.date', "fair_prob(", "r.gated"):
+                'o."timestamp" < m.date', "fair_prob(", "r.gated", "b.updated_at < m.date"):
         assert pin in src, f"pre-kickoff / de-vig rule missing: {pin}"
+    # [[#144]] AF /predictions and Tonybet's fair probabilities are scored too (AF: no timestamp — flagged)
+    assert "_load_af(ids), _load_tonybet_fair(ids)" in src and "No fetch timestamp" in src
+    assert abs(sum(ma._pct(x) for x in ("45%", "45%", "10%")) - 1.0) < 1e-12 and ma._pct(None) is None
     sched = _engine_path("workers/scheduler.py").read_text()
     assert '_run_job("model_accuracy", _job_model_accuracy_impl)' in sched
     assert "CronTrigger(hour=2, minute=40)" in sched and 'id="model_accuracy"' in sched

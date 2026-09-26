@@ -15,7 +15,8 @@ WHAT IS SCORED. Per model and market (1X2, or one O/U line), per window of settl
     pin_logloss = Pinnacle on those rows). A model is only interesting where it beats that.
 Sources: `predictions` source='ensemble' (old 1X2 / O/U, per model_version), `rating_1x2_predictions`
 (r1x2_d8plus_v1 NEW, r1x2_comb_v1 NEW+, gated rows), `ou_model_predictions` ou_comb_v1 (p_comb = the
-model, p_over = SERVED: Pinnacle where priced else combined), and Pinnacle itself as a row.
+model, p_over = SERVED: Pinnacle where priced else combined), and Pinnacle itself as a row. Since
+[[#144]] also API-Football /predictions (1X2) and Tonybet's Sportradar fair probabilities (1X2 + O/U).
 
 Epoch-free: no pandas (RELIABILITY_LEDGER #26). Read-only except its own table.
 
@@ -119,6 +120,59 @@ def _load_ou_comb(ids: list[str]) -> dict:
     return dict(out)
 
 
+def _pct(v) -> float | None:
+    try:
+        return float(str(v).rstrip("%")) / 100.0
+    except (TypeError, ValueError):
+        return None
+
+
+def _load_af(ids: list[str]) -> dict:
+    """[[#144]] API-Football /predictions 1X2 (5% steps, the Tier C fallback). ⚠️ No fetch timestamp is
+    stored on matches.af_prediction, so 'written before kickoff' cannot be enforced — it is fetched in
+    the pre-match enrichment, but a late refetch cannot be ruled out; read it as an upper bound."""
+    from workers.api_clients.db import execute_query
+    out: dict = {}
+    for ch in _chunks(ids):
+        for r in execute_query(
+                """SELECT id::text AS mid, af_prediction->'predictions'->'percent'->>'home' h,
+                          af_prediction->'predictions'->'percent'->>'draw' d,
+                          af_prediction->'predictions'->'percent'->>'away' a
+                     FROM matches WHERE id = ANY(%s::uuid[]) AND af_prediction IS NOT NULL""", (ch,)) or []:
+            p = [_pct(r["h"]), _pct(r["d"]), _pct(r["a"])]
+            if None in p or sum(p) <= 0:
+                continue
+            s = sum(p)
+            out[r["mid"]] = tuple(x / s for x in p)
+    return {("API-Football predictions", "1x2"): out} if out else {}
+
+
+def _load_tonybet_fair(ids: list[str]) -> dict:
+    """[[#144]] Tonybet's Sportradar fair probabilities (book_fair_probs, since 2026-09-23; one row per
+    selection, latest only — updated_at < kickoff keeps it pre-match)."""
+    from workers.api_clients.db import execute_query
+    raw: dict = defaultdict(dict)
+    for ch in _chunks(ids):
+        for r in execute_query(
+                """SELECT b.match_id::text AS mid, b.market, b.selection, b.fair_prob::float AS p
+                     FROM book_fair_probs b JOIN matches m ON m.id = b.match_id
+                    WHERE b.match_id = ANY(%s::uuid[]) AND b.bookmaker = 'Tonybet'
+                      AND b.updated_at < m.date
+                      AND (b.market = '1x2' AND b.handicap_line IS NULL
+                           OR b.market = ANY(%s) AND b.handicap_line = (right(b.market, 2)::numeric / 10))""",
+                (ch, list(OU_LINES))) or []:
+            raw[(r["mid"], r["market"])][r["selection"]] = r["p"]
+    out: dict = defaultdict(dict)
+    for (mid, mk), q in raw.items():
+        if mk == "1x2" and all(k in q for k in ("home", "draw", "away")):
+            s = q["home"] + q["draw"] + q["away"]
+            if s > 0:
+                out[("Tonybet fair (Sportradar)", "1x2")][mid] = (q["home"] / s, q["draw"] / s, q["away"] / s)
+        elif mk in OU_LINES and "over" in q and "under" in q and q["over"] + q["under"] > 0:
+            out[("Tonybet fair (Sportradar)", mk)][mid] = q["over"] / (q["over"] + q["under"])
+    return dict(out)
+
+
 def _load_pinnacle(ids: list[str]) -> dict:
     """Pinnacle's latest pre-kickoff complete set, de-vigged: {market: {mid: probs}}."""
     from workers.api_clients.db import execute_query
@@ -185,7 +239,7 @@ def compute(now: datetime | None = None) -> list[dict]:
     ids = list(outcomes)
     models: dict = {}
     ens1, ensou = _load_ensemble(ids)
-    for part in (ens1, ensou, _load_rating(ids), _load_ou_comb(ids)):
+    for part in (ens1, ensou, _load_rating(ids), _load_ou_comb(ids), _load_af(ids), _load_tonybet_fair(ids)):
         models.update(part)
     pin = _load_pinnacle(ids)
     for mk, probs in pin.items():
