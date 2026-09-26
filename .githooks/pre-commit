@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# PRE-COMMIT-FAST-CHECKS (2026-09-26, #168). Seconds, not minutes: only the checks that a
+# commit can break by itself and that otherwise surface as a red CI run minutes later.
+#   * every staged .py file must compile;
+#   * PRIORITY_QUEUE.md staged -> the two queue invariants (numbering, one backlog).
+# Enable once per checkout:  git config core.hooksPath .githooks
+# Never bypass with --no-verify (CLAUDE.md); fix the failure instead.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+
+py=$(printf '%s\n' "$staged" | grep -E '\.py$' || true)
+if [ -n "$py" ]; then
+  python3 -m py_compile $py || { echo "pre-commit: a staged Python file does not compile"; exit 1; }
+fi
+
+if printf '%s\n' "$staged" | grep -qx 'PRIORITY_QUEUE.md'; then
+  for t in TASK-NUMBERS-STABLE SINGLE-MASTER-TASK-LIST; do
+    out=$(python3 scripts/smoke_test.py -f "$t" 2>&1) || { printf '%s\n' "$out" | grep -E '✗|Error' ; echo "pre-commit: $t failed"; exit 1; }
+  done
+fi

@@ -57014,5 +57014,20 @@ def test_sharp_independent_close():
     return "Pinnacle out of the consensus input, own book excluded, analysis design fixed"
 
 
+@test("PRE-COMMIT-FAST-CHECKS — the repo hook compiles staged Python and runs the queue invariants (#168)")
+def test_pre_commit_fast_checks():
+    """2026-09-26: a queue note quoting a bold task tag turned TASK-NUMBERS-STABLE red for every
+    session until the next CI run said so. The hook runs the two queue invariants in ~5 s when
+    PRIORITY_QUEUE.md is staged, and py_compile on staged Python."""
+    import os
+    h = _engine_path(".githooks/pre-commit")
+    src = h.read_text()
+    assert os.access(h, os.X_OK), "hook must be executable"
+    assert "python3 -m py_compile" in src
+    assert "TASK-NUMBERS-STABLE" in src and "SINGLE-MASTER-TASK-LIST" in src
+    assert "git config core.hooksPath .githooks" in _engine_path("CLAUDE.md").read_text()
+    return "hook present, executable, documented"
+
+
 if __name__ == "__main__":
     main()
