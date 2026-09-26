@@ -57394,6 +57394,22 @@ def test_own_bet_board():
     rs = ob.build([pick("a", "draw", "ms")], {("ms", "1x2"): {"ko": ko, "quotes": q_ebk}}, now, ("Coolbet", "Epicbet"),
                   {("ms", "1x2"): {"Coolbet": Anchor("consensus", pin_like, 9), "Epicbet": Anchor("consensus", pin_like, 9)}})[0]
     assert not rs["clears"] and rs["prices"]["Epicbet"]["refusal"] == "market_split", rs["prices"]
+    # ...and the split counts for the WHOLE match: an O/U pick on a 1X2-split match is refused too
+    ou_q = {"Epicbet": {"under": (2.05, now), "over": (1.80, now)}}
+    ou_a = Anchor("consensus", {"over": 0.52, "under": 0.48}, 9)
+    ro = ob.build([dict(pick("a", "under", "ms"), market="over_under_25")],
+                  {("ms", "1x2"): {"ko": ko, "quotes": q_ebk}, ("ms", "over_under_25"): {"ko": ko, "quotes": ou_q}},
+                  now, ("Coolbet", "Epicbet"),
+                  {("ms", "1x2"): {"Coolbet": Anchor("consensus", pin_like, 9), "Epicbet": Anchor("consensus", pin_like, 9)},
+                   ("ms", "over_under_25"): {"Coolbet": ou_a, "Epicbet": ou_a}})[0]
+    assert ro["prices"]["Epicbet"]["refusal"] == "market_split", ro["prices"]
+    # DE-VIG ROBUSTNESS (San Marino v Finland draw, 2026-09-26): an edge that exists only under Shin is refused
+    lop = {"home": 0.035, "draw": 0.081, "away": 0.884}          # Shin-like fair: draw 12.3
+    a_sm = Anchor("consensus", lop, 9, {"X": lop})
+    a_sm.power_probs = {"home": 0.02, "draw": 0.06, "away": 0.92}  # power: draw 16.7
+    r_sm = ob.build([pick("a", "draw", "sm")], {("sm", "1x2"): {"ko": ko, "quotes": {"Coolbet": {"draw": (13.0, now - 300)}}}},
+                    now, ("Coolbet",), {("sm", "1x2"): {"Coolbet": a_sm}})[0]
+    assert r_sm["prices"]["Coolbet"]["refusal"] == "devig_sensitive" and not r_sm["clears"], r_sm["prices"]
     # the consensus tier never contains the book it prices
     t = at - timedelta(minutes=5)
     sets = {b: ([2.0, 3.5, 4.0], t) for b in ("B1", "B2", "B3", "B4", "B5", "Coolbet")}

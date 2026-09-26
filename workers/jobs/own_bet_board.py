@@ -46,6 +46,11 @@ KO_BLOCK_MIN = 3         # the placer refuses inside this; so does the board
 # Normal soft-book disagreement is a few points; the phantom was ~0.15.
 SPLIT_MAX_GAP = 0.08
 SPLIT_MIN_BOOKS = 2
+# DE-VIG ROBUSTNESS (owner, 2026-09-26, San Marino v Finland draw at Tonybet 13.00 shown "+5.4%"): on a lopsided
+# line the de-vig METHOD decides the answer — the anchor's Shin fair was 12.3, POWER on the same books 13-20,
+# Tonybet's own Sportradar fair 17.4. A pick must clear the floor under BOTH methods (the anchor's own members
+# re-de-vigged with power); near-even lines barely move, longshot artefacts drop out. Whether 1X2 should use
+# power everywhere is #154 R2-A (pre-registered, ~10-14); this only stops the board trusting the fragile case.
 BOARD_RULE = SharpRule(bot_name="own_board", books=None, edge_unit="ev", edge_floor=EDGE_FLOOR)
 
 
@@ -62,9 +67,23 @@ def anchors_for_books(sets: dict, ex: dict | None, sides: tuple[str, ...], books
     """Pure: {book: Anchor}. The sharp tier (Pinnacle / exchange, or their conflict) is one anchor for
     every book; otherwise each book gets the resolver's anchor WITHOUT itself (exclude_book)."""
     sharp = compute_sharp(sets.get(PIN), ex, sides, at=at)
-    if sharp.source in SHARP_SOURCES:
-        return {b: sharp for b in books}
-    return {b: compute_anchor(sets, sides, at=at, exclude_book=b) for b in books}
+    out = ({b: sharp for b in books} if sharp.source in SHARP_SOURCES
+           else {b: compute_anchor(sets, sides, at=at, exclude_book=b) for b in books})
+    for a in {id(x): x for x in out.values()}.values():
+        a.power_probs = power_fair(sets, sides, list(a.books))
+    return out
+
+
+def power_fair(sets: dict, sides: tuple[str, ...], members: list[str]) -> dict | None:
+    """Pure: the anchor's own member books (those we hold a line for) re-de-vigged with POWER, averaged,
+    renormalised — the second opinion the DE-VIG ROBUSTNESS rule needs. None when no member line is held."""
+    from workers.model.devig import devig_by
+    ps = [p for p in (devig_by("power", sets[m][0]) for m in members if m in sets) if p]
+    if not ps:
+        return None
+    m = [sum(p[i] for p in ps) / len(ps) for i in range(len(sides))]
+    s = sum(m)
+    return {side: v / s for side, v in zip(sides, m)}
 
 
 def line_anchors(mid: str, market: str, books: tuple[str, ...], at) -> dict:
@@ -94,6 +113,14 @@ def market_split(quotes: dict, books: tuple[str, ...], sides: tuple[str, ...] | 
     if len(ps) < SPLIT_MIN_BOOKS:
         return None
     return max(abs(median(p[i] for p in ps) - anchor_probs[s]) for i, s in enumerate(sides))
+
+
+def _match_split(mid: str, lines: dict, anchors: dict, books: tuple[str, ...]) -> float | None:
+    """The 1X2 market-split gap of a match, when its 1X2 line and anchor are loaded."""
+    ln = lines.get((mid, "1x2")) or {}
+    per = anchors.get((mid, "1x2")) or {}
+    a = next((x for x in per.values() if x is not None and x.probs), None)
+    return market_split(ln.get("quotes") or {}, books, market_sides("1x2"), a.probs if a else None)
 
 
 def load_picks() -> list[dict]:
@@ -139,6 +166,11 @@ def build(picks: list[dict], lines: dict, now_ts: float, books: tuple[str, ...],
         per_book = anchors.get((mid, market)) or {}
         _a0 = next((x for x in per_book.values() if x is not None and x.probs), None)
         split_gap = market_split(quotes, books, market_sides(market), _a0.probs if _a0 else None)
+        # the split is a property of the MATCH (EBK v GrIFK: the 1X2 split also made the local books' goals
+        # line look like value) — the 1X2 line's gap counts for every market of that match
+        _g1 = _match_split(mid, lines, anchors, books)
+        if _g1 is not None and (split_gap is None or _g1 > split_gap):
+            split_gap = _g1
         prices = {}
         best = None
         first_anchor = None
@@ -163,6 +195,9 @@ def build(picks: list[dict], lines: dict, now_ts: float, books: tuple[str, ...],
                 why = "sharp_conflict"
             elif not p:
                 why = "no_fair_price"
+            elif (getattr(a, "power_probs", None) or {}).get(sel) and odds * a.power_probs[sel] - 1 < EDGE_FLOOR \
+                    and edge is not None and edge >= EDGE_FLOOR:
+                why = "devig_sensitive"
             elif not quote_fresh(age, BOARD_RULE.book_max_age_min):
                 why = "stale_quote"
             else:
@@ -204,11 +239,12 @@ def run() -> dict:
     from workers.api_clients.db import get_conn
     books = accessible_books()
     picks = load_picks()
-    markets = tuple(sorted({p["market"] for p in picks}))
+    markets = tuple(sorted({p["market"] for p in picks} | {"1x2"}))   # 1X2 always: the match-level split
     lines, now_ts = load_lines(markets, books) if markets else ({}, 0.0)
     from datetime import datetime, timezone
     at = datetime.fromtimestamp(now_ts, tz=timezone.utc) if now_ts else datetime.now(timezone.utc)
-    anchors = {k: line_anchors(k[0], k[1], books, at) for k in {(p["match_id"], p["market"]) for p in picks}}
+    keys = {(p["match_id"], p["market"]) for p in picks} | {(p["match_id"], "1x2") for p in picks}
+    anchors = {k: line_anchors(k[0], k[1], books, at) for k in keys}
     rows = build(picks, lines, now_ts, books, anchors)
     vals = [tuple(json.dumps(r[c]) if c in ("bots", "prices") else r[c] for c in COLS) for r in rows]
     with get_conn() as conn:                    # replace the board atomically
