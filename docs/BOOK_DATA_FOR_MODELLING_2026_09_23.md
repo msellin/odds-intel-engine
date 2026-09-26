@@ -248,6 +248,7 @@ e-football (Kambi/Paf lists e-sims under football).
 ## Rate / anti-bot notes
 - Optibet, Tonybet/20bet and Kambi all answered the EE exit with no challenge. Optibet sits behind Cloudflare (`__cf_bm` cookie set) but
   nothing was challenged.
+- **CHANGED 2026-09-26:** the EE exit (and the Hetzner IP) now get Optibet's 403 block page on `ensb-trading.optibet.ee` — see DATA_SOURCES.md → Optibet. An Optibet live-stats fallback for #105 would hit the same block.
 - Swarm accepted the Hetzner DC IP directly.
 - Betsafe: AWS WAF blocks at the edge.
 - Total volume: Optibet ~15 API calls, Tonybet ~20 API + ~90 static CDN chunks (bundle reading), Olybet 2 ws sessions, Paf 6, Betsafe 4.

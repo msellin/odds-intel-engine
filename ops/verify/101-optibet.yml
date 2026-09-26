@@ -1,0 +1,15 @@
+# [[#101]] Optibet collector built 2026-09-26 but NOT scheduled (both VPS egresses get Optibet's 403 block page).
+# Guards: nothing on the VPS starts calling Optibet by accident (that would keep the block fresh and burn the shared
+# Estonian exit), and the only Optibet odds in the table are the 210 hand-written test rows until the owner decides.
+task: "#101"
+checks:
+  - name: no_scheduled_optibet_runs
+    mode: invariant
+    sql: "SELECT count(*) FROM pipeline_runs WHERE job_name LIKE 'optibet%'"
+    expect: "== 0"
+    expires: "2026-10-10T00:00:00Z"
+  - name: no_optibet_rows_beyond_the_test_write
+    mode: invariant
+    sql: "SELECT count(*) FROM odds_snapshots WHERE bookmaker = 'Optibet' AND timestamp > '2026-09-26 15:00+00'"
+    expect: "== 0"
+    expires: "2026-10-10T00:00:00Z"

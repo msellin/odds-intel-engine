@@ -119,5 +119,13 @@ price 159 of them. Script: session scratchpad `book_cov.py` (read-only).
   (`FS-SESSION-CROSSED-RESPONSES` and `COOLBET-FUZZY-MATCH-FALSE-POSITIVES` show
   it is not perfect); each sweeper's acceptance test re-checks this.
 
+> **CHANGED 2026-09-26 (#101, Optibet build).** Two statements above are now out of date. (1) "139 requests,
+> one per group" — the listing path takes a COMMA LIST of groups (`/en/events/group/{id,id,…}`) and boards a
+> comma list of events (`/en/events/{id,…}`), so a 48 h sweep is ~14–21 requests. (2) "reachable" — on
+> 2026-09-26 BOTH VPS egresses (the zone.ee Estonian exit and Hetzner) get Optibet's own 403 block page on
+> `ensb-trading.optibet.ee`; only the operator's Mac still reads it. The collector is built
+> (`workers/automation/optibet_feed.py`, 373 of our fixtures matched, prices identical to the site) but not
+> scheduled. See DATA_SOURCES.md → Optibet.
+
 **Revised build order: Tonybet → Optibet → Paf → Olybet (pre-match odds; its
 stats value is tracked by #105) → Betsafe spike.**

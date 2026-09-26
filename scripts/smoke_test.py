@@ -49890,6 +49890,81 @@ def test_coolbet_event_map_from_run_bulk():
     assert "mapped.append(" in src and "not dry_run" in src, (
         "pairings must be collected per matched fixture and never written on a dry run")
 
+@test("OPTIBET-SWEEPER — market mapping by type+title, squad naming, shared guards, collection-only fences")
+def test_optibet_sweeper():
+    """#101 (2026-09-26). workers/automation/optibet_feed.py reads Optibet's own sportsbook
+    backend (ensb-trading.optibet.ee) — groups → multi-group listing → multi-event boards.
+    Pins: (1) the type id + English-title mapping (period comes from the TITLE: one type id
+    covers 1st half / 2nd half / regular time; 15-min windows are dropped); (2) the 2-way
+    handicap is stored as asian_handicap on the HOME line with Tonybet's 1.25–4.0 band;
+    (3) bracket qualifiers become the squad guard's tags, youth is refused; (4) rows go
+    through the shared writer (O/U label + board_guard + mirror_guard) and pairings to
+    book_event_map; (5) COLLECTION ONLY — not placeable, not scheduled while the VPS exits
+    are blocked (403 page from Optibet on 2026-09-26). Enabling the job is the owner's call:
+    update (5) in the same commit."""
+    import pathlib
+    from workers.automation import optibet_feed as ob
+    from workers.automation.epicbet_explorer import _squad_tag
+
+    def g(t, title, odds, hc=None, active=True):
+        return {"typeId": t, "title": title, "handicap": hc, "active": active,
+                "odds": [{"typeId": ot, "value": v, "isActive": a} for ot, v, a in odds]}
+    games = [
+        g(1, "Match", [(1, 1.58, True), (2, 3.7, True), (3, 5.25, True)]),
+        g(2, "Double chance", [(4, 1.14, True), (5, 1.25, True), (6, 2.25, True)]),
+        g(3, "Over/Under", [(7, 1.98, True), (8, 1.72, True)], "2.5"),
+        g(4, "Handicap", [(9, 1.55, True), (10, 2.24, True)], "-0.5"),
+        g(4, "Handicap", [(9, 4.3, True), (10, 1.16, True)], "-2"),            # outside band
+        g(739, "Regular Time - Both Teams to Score", [(7430, 1.98, True), (7431, 1.72, True)]),
+        g(739, "1st Half - Both Teams to Score", [(7430, 5.25, True), (7431, 1.13, False)]),
+        g(540, "Regular Time Draw No Bet", [(1, 1.21, True), (3, 4.0, True)]),
+        g(540, "1st Half Draw No Bet", [(1, 1.6, True), (3, 2.3, True)]),      # not stored
+        g(537, "1st Half - Total Goals Over/Under", [(7, 2.9, True), (8, 1.36, True)], "1.5"),
+        g(537, "1st Half (00:00 - 15:00) - Total Goals Over/Under", [(7, 5.0, True), (8, 1.1, True)], "0.5"),
+        g(538, "Regular Time - Albania Total Goals Over/Under", [(22, 1.8, True), (23, 1.88, True)], "1.5"),
+        g(539, "1st Half - Belarus Total Goals Over/Under", [(24, 3.1, True), (25, 1.3, True)], "0.5"),
+        g(733, "Regular Time - Total Corners", [(7415, 2.1, True), (7416, 1.63, True)], "9.5"),
+        g(733, "2nd Half - Total Corners", [(7415, 1.9, True), (7416, 1.8, True)], "4.5"),  # not stored
+        g(1, "Match", [(1, 9.0, True)], active=False),                          # inactive game
+    ]
+    got = {(r[0], r[1], r[3]): r[2] for r in ob.parse_games(games)}
+    assert got[("1x2", "home", None)] == 1.58 and 9.0 not in got.values()
+    assert {k[1] for k in got if k[0] == "double_chance"} == {"1x", "12", "x2"}
+    assert got[("over_under_25", "over", 2.5)] == 1.98
+    assert got[("asian_handicap", "home", -0.5)] == 1.55 and got[("asian_handicap", "away", -0.5)] == 2.24
+    assert not any(k[0] == "asian_handicap" and k[2] == -2.0 for k in got), "AH band filter lost"
+    assert got[("btts", "yes", None)] == 1.98 and ("btts_1h", "yes", None) in got
+    assert ("btts_1h", "no", None) not in got, "inactive odd stored"
+    assert got[("draw_no_bet", "home", None)] == 1.21 and len([k for k in got if k[0] == "draw_no_bet"]) == 2
+    assert ("over_under_1h_15", "over", 1.5) in got
+    assert not any(k[0] == "over_under_1h_05" for k in got), "a 15-minute window leaked into 1H totals"
+    assert ("team_total_home_15", "over", 1.5) in got and ("team_total_1h_away_05", "under", 0.5) in got
+    assert ("corners_ou_95", "over", 9.5) in got and not any(k[0].startswith("corners_2h") for k in got)
+
+    for raw, want, tag in (("Chelsea (Women)", "Chelsea W", "w"), ("Romania(U19)", "Romania U19", "u19"),
+                           ("Amazulu (Reserves)", "Amazulu Reserves", "res"),
+                           ("Italy (U20) (Women)", "Italy U20 W", "w"), ("Rangers FC II", "Rangers FC II", "res")):
+        assert ob._team_name({"name": raw}) == want and _squad_tag(want) == tag, raw
+    assert ob._team_name({"name": "Some Club (Youth)"}) is None
+
+    root = pathlib.Path(__file__).parent.parent
+    src = (root / "workers/automation/optibet_feed.py").read_text()
+    assert "store_book_odds_snapshots(" in src and "record_book_events(" in src, "must use the guarded shared writer"
+    assert "_squads_compatible" in src and "_flipped(" in src and '"invertedTeams"' in src
+    assert "metered_session(BOOKMAKER)" in src and "www.optibet.ee" not in src.replace("`www.optibet.ee`", "")
+    from workers.utils import footprint
+    assert footprint.budget("Optibet"), "Optibet needs a footprint budget"
+    # (5) collection only
+    pipe = (root / "workers/jobs/daily_pipeline_v2.py").read_text()
+    acc = pipe[pipe.index("ACCESSIBLE_BOOKMAKERS: frozenset"): pipe.index("PRICE_REFERENCE_BOOKMAKERS")]
+    assert '"Optibet"' not in acc, "Optibet is collection-only until the owner makes it placeable"
+    sched = (root / "workers/scheduler.py").read_text()
+    assert 'id="optibet_odds_snapshot"' not in sched, (
+        "the Optibet sweep is not scheduled: both VPS exits get Optibet's 403 block page "
+        "(2026-09-26). Scheduling it is the owner's decision — update this pin when it is made")
+    return "type+title mapping, AH home line, squad tags, shared guards, collection-only"
+
+
 @test("TONYBET-SWEEPER — market mapping, squad naming, flip guard, and the fences around a new book")
 def test_tonybet_sweeper():
     """TONYBET-SWEEPER (#101, 2026-09-23). Tonybet is swept on Sportradar UOF ids
