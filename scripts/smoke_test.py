@@ -57417,11 +57417,13 @@ def test_own_board_page():
     assert '"/api/admin/real-bet"' in ui and "take_at" in ui and "LAST_WINDOW_H = 3" in ui
     page = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text(encoding="utf-8")
     assert "<OwnBoard" in page and "loadOwnBoard()" in page and 'title="Where to bet"' in page
-    money = _web_path("src/lib/admin-money.ts").read_text(encoding="utf-8")
-    assert 'LEDGER_RESET_AT = "2026-09-26T00:00:00Z"' in money and "Date.parse(LEDGER_RESET_AT)" in money
+    # the ledger restart is a DELETE (migration 475, owner), not a filter — no hidden-rows toggle left
+    mig = _engine_path("supabase/migrations/475_delete_real_bets_before_reset.sql").read_text()
+    assert "DELETE FROM real_bets WHERE placed_at < '2026-09-26 00:00:00+00'" in mig and "-- verify:" in mig
     view = _web_path("src/app/(app)/admin/bots/money-view.tsx").read_text(encoding="utf-8")
-    assert "b.placedAt >= LEDGER_RESET_AT" in view and "section=money&all=1" in view
-    return "board on top, shared types only in the client, Log via real-bet API, ledger restart"
+    assert "LEDGER_RESET_AT" not in view and "all=1" not in view
+    assert "const todo: MoneyBet[] = [];" in view, "no never-clearing 'not matched to your account' to-do"
+    return "board on top, shared types only in the client, Log via real-bet API, old ledger deleted"
 
 
 @test("OWN-BOTS — bot_own_1x2_v1: one bot per market, best clearing Estonian book, < 3 h to kick-off, >= 3 books confirm (#182)")

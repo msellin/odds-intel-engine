@@ -58,3 +58,6 @@ dev/active/**/*.csv
 dev/active/*.pdf
 dev/active/coolbet-raw-*.json
 dev/active/deepbetting_stats.json
+
+# [[#182]] the owner's old real-money bets (deleted from real_bets by migration 475) — never in the public repo
+dev/archive/real_bets_before_2026-09-26.csv
